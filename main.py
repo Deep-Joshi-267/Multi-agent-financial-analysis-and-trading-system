@@ -176,6 +176,23 @@ def print_ascii_graph() -> None:
 ║  │         └───────────────────┘                              │  HUMAN APPROVAL │ │  ║
 ║  │         (Max 3 iterations)                                 │  (if required)  │ │  ║
 ║  │         Score threshold: 0.6                               └─────────────────┘ │  ║
+║  └──────────────────────────────────┬──────────────────────────────────────────────┘  ║
+║                                     │                                                 ║
+║                                     ▼                                                 ║
+║  ┌─────────────────────────────────────────────────────────────────────────────────┐  ║
+║  │                          STAGE 6: RISK MANAGEMENT TEAM                          │  ║
+║  │                                                                                 │  ║
+║  │   ┌─────────────┐    ┌──────────────┐    ┌───────────────┐                     │  ║
+║  │   │   RISKY     │    │   NEUTRAL    │    │     SAFE      │                     │  ║
+║  │   │  ADVISOR    │    │   ADVISOR    │    │   ADVISOR     │                     │  ║
+║  │   │ (Aggressive)│    │  (Balanced)  │    │(Conservative) │                     │  ║
+║  │   └──────┬──────┘    └──────┬───────┘    └───────┬───────┘                     │  ║
+║  │          └──────────────────┼────────────────────┘                             │  ║
+║  │                             ▼                                                   │  ║
+║  │                  ┌──────────────────┐                                           │  ║
+║  │                  │  REPORT MANAGER  │                                           │  ║
+║  │                  │ (Final Approval) │                                           │  ║
+║  │                  └──────────────────┘                                           │  ║
 ║  └─────────────────────────────────────────────────────────────────────────────────┘  ║
 ║                                                                                       ║
 ╚═══════════════════════════════════════════════════════════════════════════════════════╝
@@ -477,6 +494,60 @@ def format_full_pipeline_result(result: Dict[str, Any]) -> str:
                 lines.append(f"     [{order.get('order_id', 'N/A')}] {order.get('side', 'N/A')} "
                            f"{order.get('quantity', 0)} shares @ ${order.get('execution_price', 0):.2f}")
         lines.append("")
+    
+    # Risk Management Assessment
+    risk_assessment = result.get("risk_assessment", {})
+    if risk_assessment and not risk_assessment.get("error"):
+        final_rec = risk_assessment.get("final_recommendation", {})
+        advisors = risk_assessment.get("advisor_assessments", {})
+        
+        lines.extend([
+            "═" * 80,
+            "  🛡️ RISK MANAGEMENT ASSESSMENT",
+            "═" * 80,
+        ])
+        
+        lines.append(f"  Final Action:      {final_rec.get('action', 'N/A')}")
+        lines.append(f"  Risk Level:        {final_rec.get('risk_level', 'N/A')}")
+        lines.append(f"  Confidence:        {final_rec.get('confidence', 0):.0%}")
+        lines.append(f"  Approved Size:     {final_rec.get('approved_position_size', 0)*100:.0f}% of requested")
+        lines.append(f"  Required Stop:     {final_rec.get('required_stop_loss', 0)}%")
+        lines.append(f"  Senior Approval:   {'Required' if final_rec.get('requires_senior_approval') else 'Not Required'}")
+        lines.append("")
+        
+        # Advisor perspectives
+        lines.append("  📊 ADVISOR PERSPECTIVES:")
+        for advisor_type in ["risky", "neutral", "safe"]:
+            advisor = advisors.get(advisor_type, {})
+            if advisor:
+                emoji = {"risky": "🔥", "neutral": "⚖️", "safe": "🛡️"}.get(advisor_type, "•")
+                lines.append(f"     {emoji} {advisor_type.upper():8} → {advisor.get('recommendation', 'N/A'):20} "
+                           f"(Risk: {advisor.get('risk_score', 0):.2f}, Adj: {advisor.get('position_adjustment', 1.0):.1f}x)")
+        lines.append("")
+        
+        # Key risks
+        key_risks = final_rec.get("key_risks_identified", [])
+        if key_risks:
+            lines.append("  ⚠️ KEY RISKS:")
+            for risk in key_risks[:3]:
+                lines.append(f"     • {risk}")
+            lines.append("")
+        
+        # Mitigation strategies
+        mitigations = final_rec.get("mitigation_strategies", [])
+        if mitigations:
+            lines.append("  ✓ MITIGATION STRATEGIES:")
+            for strategy in mitigations[:3]:
+                lines.append(f"     • {strategy}")
+            lines.append("")
+        
+        # Approval conditions
+        conditions = final_rec.get("approval_conditions", [])
+        if conditions:
+            lines.append("  📋 APPROVAL CONDITIONS:")
+            for condition in conditions[:3]:
+                lines.append(f"     • {condition}")
+            lines.append("")
     
     lines.append("═" * 80)
     return "\n".join(lines)

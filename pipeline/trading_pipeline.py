@@ -1,10 +1,10 @@
 """Unified Trading Pipeline.
 
 Orchestrates the complete trading analysis workflow:
-1. Data Fetching → 2. Analyst Team → 3. Researcher Team → 4. CIO Decision → 5. Trader Execution
+1. Data Fetching → 2. Analyst Team → 3. Researcher Team → 4. CIO Decision → 5. Trader Execution → 6. Risk Management
 
 Uses LangGraph for workflow management with proper state transitions,
-feedback-driven reasoning, and human-in-the-loop approval.
+feedback-driven reasoning, human-in-the-loop approval, and risk oversight.
 """
 
 from typing import TypedDict, Optional, List, Literal
@@ -16,6 +16,7 @@ from langchain_groq import ChatGroq
 from analysts import AnalystsTeam
 from researchers import ResearcherTeam
 from traders import TraderTeam
+from risk_management import RiskManagementTeam
 from data import MarketDataFetcher
 
 
@@ -50,6 +51,10 @@ class PipelineState(TypedDict):
     # Trader layer
     trade_execution: Optional[dict]
     trader_status: str
+    
+    # Risk Management layer
+    risk_assessment: Optional[dict]
+    risk_status: str
     
     # Metadata
     pipeline_stage: str
@@ -105,16 +110,17 @@ class TradingPipeline:
     Complete trading analysis pipeline integrating all teams.
     
     Pipeline Flow:
-    ┌──────────────┐    ┌───────────────┐    ┌─────────────────┐    ┌────────────────┐    ┌─────────────┐
-    │ Data Fetch   │───▶│ Analyst Team  │───▶│ Researcher Team │───▶│ CIO Decision   │───▶│ Trader Team │
-    │ (Market Data)│    │ (4 Analysts)  │    │ (Bull vs Bear)  │    │                │    │ (Execution) │
-    └──────────────┘    └───────────────┘    └─────────────────┘    └────────────────┘    └─────────────┘
+    ┌──────────────┐    ┌───────────────┐    ┌─────────────────┐    ┌────────────┐    ┌─────────────┐    ┌─────────────────┐
+    │ Data Fetch   │───▶│ Analyst Team  │───▶│ Researcher Team │───▶│    CIO     │───▶│ Trader Team │───▶│ Risk Management │
+    │ (Market Data)│    │ (4 Analysts)  │    │ (Bull vs Bear)  │    │  Decision  │    │ (Execution) │    │ (3 Advisors)    │
+    └──────────────┘    └───────────────┘    └─────────────────┘    └────────────┘    └─────────────┘    └─────────────────┘
     
     Features:
     - Feedback-driven reasoning in Trader Team
     - Human-in-the-loop for trade approval
     - Max iteration threshold to prevent infinite loops
     - Scoring system for decision quality
+    - Risk Management with Risky/Neutral/Safe advisors
     """
 
     def __init__(
@@ -140,6 +146,7 @@ class TradingPipeline:
             score_threshold=score_threshold,
             require_human_approval=require_human_approval,
         )
+        self.risk_management_team = RiskManagementTeam(llm=self.llm)
         
         # Build pipeline graph
         self.graph = self._build_pipeline()
@@ -159,6 +166,7 @@ class TradingPipeline:
         workflow.add_node("research", self._research_node)
         workflow.add_node("decide", self._decide_node)
         workflow.add_node("trade", self._trade_node)
+        workflow.add_node("risk_manage", self._risk_manage_node)
 
         # Set entry point
         workflow.set_entry_point("fetch_data")
@@ -194,7 +202,9 @@ class TradingPipeline:
             }
         )
         
-        workflow.add_edge("trade", END)
+        # After trade, run risk management
+        workflow.add_edge("trade", "risk_manage")
+        workflow.add_edge("risk_manage", END)
 
         return workflow.compile()
 
@@ -378,6 +388,40 @@ class TradingPipeline:
                 "pipeline_stage": "trade_error",
             }
 
+    def _risk_manage_node(self, state: PipelineState) -> dict:
+        """Execute risk management assessment."""
+        ticker = state["ticker"]
+        
+        if self.verbose:
+            print(f"[Pipeline] Running risk management team for {ticker}...")
+        
+        try:
+            risk_result = self.risk_management_team.assess_risk(
+                ticker=ticker,
+                trade_execution=state.get("trade_execution", {}),
+                final_decision=state.get("final_decision", {}),
+                analyst_report=state.get("analyst_report", {}),
+                research_report=state.get("research_report", {}),
+                market_data=state.get("market_data", {}),
+                available_capital=state.get("available_capital", 100000.0),
+                current_exposure=0.0,  # Could be calculated from portfolio
+                risk_tolerance=state.get("risk_tolerance", "moderate"),
+                portfolio=state.get("portfolio", []),
+            )
+            
+            return {
+                "risk_assessment": risk_result,
+                "risk_status": "success",
+                "pipeline_stage": "risk_assessed",
+            }
+        except Exception as e:
+            return {
+                "risk_assessment": {"error": str(e)},
+                "risk_status": "error",
+                "errors": state.get("errors", []) + [f"Risk assessment failed: {str(e)}"],
+                "pipeline_stage": "risk_error",
+            }
+
     def _check_data_status(self, state: PipelineState) -> Literal["success", "error"]:
         """Check if data fetch was successful."""
         return "success" if state.get("data_fetch_status") == "success" else "error"
@@ -438,6 +482,8 @@ class TradingPipeline:
             "final_decision": None,
             "trade_execution": None,
             "trader_status": "pending",
+            "risk_assessment": None,
+            "risk_status": "pending",
             "pipeline_stage": "initialized",
             "errors": [],
             "messages": [],
@@ -448,10 +494,12 @@ class TradingPipeline:
         # Build comprehensive result
         final_decision = result.get("final_decision", {})
         trade_execution = result.get("trade_execution", {})
+        risk_assessment = result.get("risk_assessment", {})
         
         return {
             **final_decision,
             "trade_execution": trade_execution,
+            "risk_assessment": risk_assessment,
             "pipeline_stage": result.get("pipeline_stage"),
             "errors": result.get("errors", []),
         }
@@ -481,6 +529,8 @@ class TradingPipeline:
             "final_decision": None,
             "trade_execution": None,
             "trader_status": "pending",
+            "risk_assessment": None,
+            "risk_status": "pending",
             "pipeline_stage": "initialized",
             "errors": [],
             "messages": [],
@@ -494,6 +544,7 @@ class TradingPipeline:
             "analyst_report": result.get("analyst_report"),
             "research_report": result.get("research_report"),
             "trade_execution": result.get("trade_execution"),
+            "risk_assessment": result.get("risk_assessment"),
             "market_data_summary": {
                 "current_price": result.get("market_data", {}).get("current_price"),
                 "news_count": len(result.get("market_data", {}).get("news_articles", [])),
