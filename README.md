@@ -1,37 +1,68 @@
 # TradingAgents
 
-A production-ready multi-agent financial analysis system powered by LangGraph and Groq LLM.
+A production-ready multi-agent financial analysis and trading system powered by LangGraph and Groq LLM.
 
 ## Features
 
-- **Multi-Agent Architecture**: Four specialized analyst agents collaborate to produce trading recommendations
-- **LangGraph Workflow**: Orchestrated pipeline with state management
-- **Real-Time Data**: Fetches live news and stock data
-- **Graph Visualization**: Visual representation of the workflow
-- **Production CLI**: Full command-line interface with multiple output formats
+- **5-Stage Pipeline**: Data → Analysts → Researchers → CIO → Traders
+- **Multi-Agent Architecture**: Specialized agents for analysis, research, and execution
+- **Bull vs Bear Debate**: Researchers engage in multi-round debates for balanced insights
+- **Feedback-Driven Trading**: Iterative decision refinement with scoring
+- **Human-in-the-Loop**: Manual approval before trade execution
+- **Real-Time Data**: Live news and stock data integration
+- **Graph Visualization**: Visual workflow representation
+- **Production CLI**: Full command-line interface with multiple modes
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     MarketDataFetcher                       │
-│  (News + Stock Data)                                        │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      AnalystsTeam                           │
-│  (LangGraph Workflow)                                       │
-├─────────────────────────────────────────────────────────────┤
-│  ┌────────┐ ┌──────────────┐ ┌───────────┐ ┌─────────────┐ │
-│  │ News   │ │ Fundamentals │ │ Sentiment │ │ Technical   │ │
-│  │Analyst │ │   Analyst    │ │  Analyst  │ │   Analyst   │ │
-│  └────────┘ └──────────────┘ └───────────┘ └─────────────┘ │
-│                         │                                   │
-│                         ▼                                   │
-│              Consolidated Report (CIO)                      │
-│              BUY/SELL/HOLD + Confidence                     │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────┐    ┌───────────────┐    ┌─────────────────┐    ┌────────────┐    ┌─────────────┐
+│  STAGE 1     │    │   STAGE 2     │    │    STAGE 3      │    │  STAGE 4   │    │  STAGE 5    │
+│  Data Fetch  │───▶│ Analyst Team  │───▶│ Researcher Team │───▶│    CIO     │───▶│ Trader Team │
+│              │    │ (4 Analysts)  │    │ (Bull vs Bear)  │    │  Decision  │    │ (Execution) │
+└──────────────┘    └───────────────┘    └─────────────────┘    └────────────┘    └─────────────┘
+```
+
+### Stage 2: Analyst Team
+```
+┌────────────┐  ┌──────────────┐  ┌─────────────┐  ┌─────────────┐
+│    News    │  │ Fundamentals │  │  Sentiment  │  │  Technical  │
+│   Analyst  │  │   Analyst    │  │   Analyst   │  │   Analyst   │
+└─────┬──────┘  └──────┬───────┘  └──────┬──────┘  └──────┬──────┘
+      └────────────────┴─────────────────┴─────────────────┘
+                                 │
+                                 ▼
+                    ┌────────────────────────┐
+                    │   Consolidated Report  │
+                    └────────────────────────┘
+```
+
+### Stage 3: Researcher Team
+```
+┌─────────────────┐         ┌─────────────────┐
+│     BULLISH     │◄───────►│     BEARISH     │
+│   RESEARCHER    │ DEBATE  │   RESEARCHER    │
+└─────────────────┘ (2 rds) └─────────────────┘
+         │                           │
+         └───────────┬───────────────┘
+                     ▼
+          ┌──────────────────┐
+          │    Synthesized   │
+          │  Research Report │
+          └──────────────────┘
+```
+
+### Stage 5: Trader Team
+```
+┌─────────────┐    ┌──────────────┐    ┌───────────────┐    ┌────────────┐
+│   TRADER    │───▶│    RISK      │───▶│   PORTFOLIO   │───▶│  EXECUTOR  │
+│   AGENT     │    │   MANAGER    │    │   MANAGER     │    │            │
+└─────────────┘    └──────────────┘    └───────────────┘    └──────┬─────┘
+      ▲                   │                                        │
+      │    FEEDBACK       │                                        ▼
+      │    LOOP           │                              ┌─────────────────┐
+      └───────────────────┘                              │  HUMAN APPROVAL │
+      (Max 3 iterations)                                 └─────────────────┘
 ```
 
 ## Installation
@@ -65,8 +96,11 @@ Get your Groq API key from: https://console.groq.com/keys
 ### Command Line
 
 ```bash
-# Analyze a single stock
+# Full pipeline (Analysts + Researchers + CIO + Traders)
 python main.py AAPL
+
+# Quick mode (Analysts only - faster)
+python main.py AAPL --quick
 
 # Analyze multiple stocks
 python main.py AAPL MSFT GOOGL
@@ -87,21 +121,38 @@ python main.py --save-graph my_graph.png
 ### Python API
 
 ```python
+from pipeline import TradingPipeline
+
+# Full pipeline with all stages
+pipeline = TradingPipeline(
+    max_debate_rounds=2,      # Researcher debate rounds
+    max_trade_iterations=3,   # Trader feedback iterations
+    require_human_approval=True,
+)
+
+result = pipeline.run(
+    ticker="AAPL",
+    available_capital=100000,
+    risk_tolerance="moderate",  # conservative, moderate, aggressive
+)
+
+print(f"Action: {result['action']}")
+print(f"Confidence: {result['confidence']:.1%}")
+```
+
+### Quick Analysis (Analysts Only)
+
+```python
 from analysts import AnalystsTeam
 from data import MarketDataFetcher
 
-# Initialize
 fetcher = MarketDataFetcher()
 team = AnalystsTeam()
 
-# Fetch market data
 market_data = fetcher.fetch_market_data("AAPL")
-
-# Run analysis
 result = team.analyze(ticker="AAPL", market_data=market_data)
 
 print(f"Signal: {result['final_signal']}")
-print(f"Confidence: {result['confidence']:.1%}")
 ```
 
 ### Flask API
@@ -122,10 +173,10 @@ Endpoints:
 hekronpy/
 ├── main.py                 # Production CLI entry point
 ├── requirement.txt         # Dependencies
-├── .env                    # Environment variables
+├── .env                    # Environment variables (create this)
 ├── README.md
 │
-├── analysts/               # LangGraph Analyst Agents
+├── analysts/               # Stage 2: Analyst Team
 │   ├── __init__.py
 │   ├── state.py            # Shared state definitions
 │   ├── news_analyst.py     # News-driven analysis
@@ -134,7 +185,28 @@ hekronpy/
 │   ├── technical_analyst.py
 │   └── team.py             # LangGraph coordinator
 │
-├── data/                   # Data Fetchers
+├── researchers/            # Stage 3: Researcher Team
+│   ├── __init__.py
+│   ├── state.py            # Research state definitions
+│   ├── bullish_researcher.py   # Bull case arguments
+│   ├── bearish_researcher.py   # Bear case arguments
+│   ├── debate.py           # Debate coordinator
+│   └── team.py             # LangGraph workflow
+│
+├── traders/                # Stage 5: Trader Team
+│   ├── __init__.py
+│   ├── state.py            # Trade state, orders, scoring
+│   ├── trader_agent.py     # Core decision-making
+│   ├── risk_manager.py     # Risk assessment + feedback scoring
+│   ├── portfolio_manager.py    # Position sizing
+│   ├── execution.py        # Human-in-the-loop approval
+│   └── team.py             # Feedback loop workflow
+│
+├── pipeline/               # Stage 4: CIO + Orchestration
+│   ├── __init__.py
+│   └── trading_pipeline.py # Full 5-stage pipeline
+│
+├── data/                   # Stage 1: Data Fetchers
 │   ├── __init__.py
 │   ├── news_scraper.py     # MoneyControl news scraper
 │   ├── stock_data.py       # yfinance + indicators
@@ -144,7 +216,9 @@ hekronpy/
 └── workflow_graph.png      # Generated workflow visualization
 ```
 
-## Analyst Agents
+## Agent Teams
+
+### Analyst Team (Stage 2)
 
 | Agent | Role | Data Sources |
 |-------|------|--------------|
@@ -153,27 +227,78 @@ hekronpy/
 | **Sentiment Analyst** | Assesses market psychology | Price action, news tone |
 | **Technical Analyst** | Price patterns & indicators | RSI, MACD, SMA, volume |
 
+### Researcher Team (Stage 3)
+
+| Agent | Role | Output |
+|-------|------|--------|
+| **Bullish Researcher** | Builds investment case | Growth catalysts, opportunities |
+| **Bearish Researcher** | Identifies risks | Challenges, downsides |
+| **Debate Coordinator** | Manages multi-round debate | Synthesized research report |
+
+### Trader Team (Stage 5)
+
+| Agent | Role | Output |
+|-------|------|--------|
+| **Trader Agent** | Core decision-making | Order type, sizing, timing |
+| **Risk Manager** | Scores decisions | Risk/Reward/Timing/Alignment scores |
+| **Portfolio Manager** | Optimizes allocation | Position sizing, concentration limits |
+| **Trade Executor** | Handles approval flow | Human-in-the-loop, order execution |
+
+## Key Configurations
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `max_debate_rounds` | 2 | Researcher debate iterations |
+| `max_trade_iterations` | 3 | Trader feedback loop limit |
+| `score_threshold` | 0.6 | Minimum score to proceed |
+| `require_human_approval` | True | Manual trade approval |
+| `risk_tolerance` | "moderate" | conservative / moderate / aggressive |
+
 ## Output Example
 
+### Full Pipeline Output
 ```
-══════════════════════════════════════════════════════════════════════
-  TRADING ANALYSIS: AAPL
-  Generated: 2026-01-31T20:37:01
-══════════════════════════════════════════════════════════════════════
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  📊 FINAL INVESTMENT DECISION: AAPL                                          │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  Action:         BUY                                                         │
+│  Confidence:     72.0%                                                       │
+│  Position Size:  HALF                                                        │
+│  Time Horizon:   MEDIUM                                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
 
-  📊 RECOMMENDATION: HOLD
-  📈 Confidence:     65.0%
-  💰 Position Size:  HALF
-  ⏱️  Time Horizon:   MEDIUM
+════════════════════════════════════════════════════════════════════════════════
+  📚 RESEARCHER TEAM DEBATE SUMMARY
+════════════════════════════════════════════════════════════════════════════════
+  🐂 BULL CASE: Strong brand, competitive moat, solid balance sheet...
+  🐻 BEAR CASE: High valuation, competitive pressures, concentration risk...
+  ✓ CONSENSUS: Strong fundamentals, market leader position
+  ✗ DISAGREEMENTS: Valuation metrics, growth trajectory
 
-──────────────────────────────────────────────────────────────────────
-  INDIVIDUAL ANALYST SIGNALS:
-──────────────────────────────────────────────────────────────────────
-    NEWS            HOLD   (0%)
-    FUNDAMENTALS    HOLD   (70%)
-    SENTIMENT       BUY    (70%)
-    TECHNICAL       HOLD   (60%)
-══════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════════════════
+  👥 ANALYST TEAM SIGNALS
+════════════════════════════════════════════════════════════════════════════════
+    NEWS               BUY          (65%)
+    FUNDAMENTALS       HOLD         (60%)
+    SENTIMENT          BUY          (70%)
+    TECHNICAL          BUY          (68%)
+
+════════════════════════════════════════════════════════════════════════════════
+  💹 TRADE EXECUTION
+════════════════════════════════════════════════════════════════════════════════
+  Action:          BUY
+  Position Size:   15.0% of capital
+  Stop Loss:       5%
+  Take Profit:     12%
+
+  📊 DECISION QUALITY SCORE:
+     Overall:    0.72/1.0
+     Risk:       0.35
+     Reward:     0.78
+     Iterations: 2
+
+  Execution Status: AWAITING_HUMAN_APPROVAL
+════════════════════════════════════════════════════════════════════════════════
 ```
 
 ## Dependencies
@@ -184,6 +309,12 @@ hekronpy/
 - **beautifulsoup4** - News scraping
 - **flask** - REST API
 - **pandas/numpy** - Data processing
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GROQ_API_KEY` | Yes | Groq API key for LLM |
 
 ## License
 
