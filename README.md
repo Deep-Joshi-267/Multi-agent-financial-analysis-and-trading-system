@@ -254,52 +254,6 @@ hekronpy/
 | `require_human_approval` | True | Manual trade approval |
 | `risk_tolerance` | "moderate" | conservative / moderate / aggressive |
 
-## Output Example
-
-### Full Pipeline Output
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│  📊 FINAL INVESTMENT DECISION: AAPL                                          │
-├──────────────────────────────────────────────────────────────────────────────┤
-│  Action:         BUY                                                         │
-│  Confidence:     72.0%                                                       │
-│  Position Size:  HALF                                                        │
-│  Time Horizon:   MEDIUM                                                      │
-└──────────────────────────────────────────────────────────────────────────────┘
-
-════════════════════════════════════════════════════════════════════════════════
-  📚 RESEARCHER TEAM DEBATE SUMMARY
-════════════════════════════════════════════════════════════════════════════════
-  🐂 BULL CASE: Strong brand, competitive moat, solid balance sheet...
-  🐻 BEAR CASE: High valuation, competitive pressures, concentration risk...
-  ✓ CONSENSUS: Strong fundamentals, market leader position
-  ✗ DISAGREEMENTS: Valuation metrics, growth trajectory
-
-════════════════════════════════════════════════════════════════════════════════
-  👥 ANALYST TEAM SIGNALS
-════════════════════════════════════════════════════════════════════════════════
-    NEWS               BUY          (65%)
-    FUNDAMENTALS       HOLD         (60%)
-    SENTIMENT          BUY          (70%)
-    TECHNICAL          BUY          (68%)
-
-════════════════════════════════════════════════════════════════════════════════
-  💹 TRADE EXECUTION
-════════════════════════════════════════════════════════════════════════════════
-  Action:          BUY
-  Position Size:   15.0% of capital
-  Stop Loss:       5%
-  Take Profit:     12%
-
-  📊 DECISION QUALITY SCORE:
-     Overall:    0.72/1.0
-     Risk:       0.35
-     Reward:     0.78
-     Iterations: 2
-
-  Execution Status: AWAITING_HUMAN_APPROVAL
-════════════════════════════════════════════════════════════════════════════════
-```
 
 ## Dependencies
 
@@ -309,12 +263,6 @@ hekronpy/
 - **beautifulsoup4** - News scraping
 - **flask** - REST API
 - **pandas/numpy** - Data processing
-
-## Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `GROQ_API_KEY` | Yes | Groq API key for LLM |
 
 ## License
 
