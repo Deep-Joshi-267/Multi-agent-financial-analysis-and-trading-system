@@ -42,7 +42,7 @@ class FundamentalsAnalyst:
     """Fundamentals analyst that evaluates company financial health."""
 
     def __init__(self, llm: Optional[ChatGroq] = None):
-        self.llm = llm or ChatGroq(model="llama-3.3-70b-versatile", temperature=0.1)
+        self.llm = llm or ChatGroq(model="qwen/qwen3.8-27b", temperature=0.1)
         self.prompt = ChatPromptTemplate.from_template(FUNDAMENTALS_PROMPT)
         self.parser = JsonOutputParser()
 

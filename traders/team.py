@@ -56,7 +56,7 @@ class TraderTeam:
             auto_approve_threshold: Score threshold for auto-approval
             approval_callback: Optional callback for approval (default: CLI prompt)
         """
-        self.llm = llm or ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2)
+        self.llm = llm or ChatGroq(model="qwen/qwen3.8-27b", temperature=0.2)
         self.max_iterations = max_iterations
         self.score_threshold = score_threshold
         self.require_human_approval = require_human_approval

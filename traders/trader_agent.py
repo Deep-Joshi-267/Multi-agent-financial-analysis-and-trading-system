@@ -84,7 +84,7 @@ class TraderAgent:
     """Core trader agent for making execution decisions."""
 
     def __init__(self, llm: Optional[ChatGroq] = None):
-        self.llm = llm or ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2)
+        self.llm = llm or ChatGroq(model="qwen/qwen3.8-27b", temperature=0.2)
         self.prompt = ChatPromptTemplate.from_template(TRADER_DECISION_PROMPT)
         self.parser = JsonOutputParser()
 

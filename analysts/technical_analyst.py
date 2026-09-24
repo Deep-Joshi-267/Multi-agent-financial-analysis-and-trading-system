@@ -45,7 +45,7 @@ class TechnicalAnalyst:
     """Technical analyst using price action and indicators."""
 
     def __init__(self, llm: Optional[ChatGroq] = None):
-        self.llm = llm or ChatGroq(model="llama-3.3-70b-versatile", temperature=0.1)
+        self.llm = llm or ChatGroq(model="qwen/qwen3.8-27b", temperature=0.1)
         self.prompt = ChatPromptTemplate.from_template(TECHNICAL_PROMPT)
         self.parser = JsonOutputParser()
 
