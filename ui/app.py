@@ -28,7 +28,8 @@ sys.path.insert(0, str(ROOT))
 from dotenv import load_dotenv
 load_dotenv(ROOT / ".env")
 
-app = Flask(__name__, template_folder="templates", static_folder="static")
+DIST_DIR = Path(__file__).parent / "dist"
+app = Flask(__name__, template_folder="templates", static_folder="dist" if DIST_DIR.exists() else "static", static_url_path="")
 CORS(app)
 
 logging.basicConfig(
@@ -89,6 +90,8 @@ def _get_llm(temperature: float = 0.1):
 
 def run_analysis(job_id: str, ticker: str, capital: float,
                  risk: str, quick: bool, q: queue.Queue):
+    # Initialise a single shared LLM instance for all stages
+    llm = _get_llm(temperature=0.1)
     try:
         # ── Stage 1: Fetch Market Data ───────────────────────────────────
         _emit(q, "data", f"Fetching live market data for {ticker} via Yahoo Finance...")
@@ -200,7 +203,7 @@ def run_analysis(job_id: str, ticker: str, capital: float,
         # Quick mode — stop here
         if quick:
             _emit(q, "complete",
-                  f"Analysis complete: {final_signal} for {ticker} @ ${price:.2f}",
+                  f"Analysis complete: {final_signal} for {ticker} @ Rs.{price:.2f}",
                   status="done",
                   data={"result": {
                       "ticker": ticker, "action": final_signal,
@@ -216,12 +219,13 @@ def run_analysis(job_id: str, ticker: str, capital: float,
             return
 
         # ── Stage 3: Researcher Debate ───────────────────────────────────
-        _emit(q, "researchers", "Bull vs Bear researcher debate (2 rounds)...")
+        _emit(q, "researchers", "Bull vs Bear researcher debate starting (2 rounds)...")
         research_summary = {}
         rec_action = final_signal
         try:
             from researchers import ResearcherTeam
-            r_team = ResearcherTeam(max_debate_rounds=2)
+            # Reuse the same LLM instance to avoid extra init overhead
+            r_team = ResearcherTeam(llm=llm, max_debate_rounds=2)
             research = r_team.research(
                 ticker=ticker,
                 analyst_report=analyst_summary,
@@ -233,17 +237,21 @@ def run_analysis(job_id: str, ticker: str, capital: float,
             thesis      = research.get("investment_thesis", "")
             bull_case   = research.get("bull_case_summary", "")
             bear_case   = research.get("bear_case_summary", "")
-            risk_reward = research.get("risk_reward_ratio", "")
+            risk_reward = research.get("risk_reward_assessment", research.get("risk_reward_ratio", ""))
 
             research_summary = _safe({
-                "recommended_action": rec_action,
-                "conviction":         conviction,
-                "investment_thesis":  thesis,
-                "bull_case_summary":  bull_case,
-                "bear_case_summary":  bear_case,
-                "risk_reward_ratio":  risk_reward,
-                "key_risks":          research.get("key_risks", []),
-                "key_opportunities":  research.get("key_opportunities", []),
+                "recommended_action":   rec_action,
+                "conviction":           conviction,
+                "investment_thesis":    thesis,
+                "bull_case_summary":    bull_case,
+                "bear_case_summary":    bear_case,
+                "risk_reward_assessment": risk_reward,
+                "risk_reward_ratio":    risk_reward,  # alias for backward compat
+                "key_risks":            research.get("key_risks", []),
+                "key_opportunities":    research.get("key_opportunities", []),
+                "consensus_points":     research.get("consensus_points", []),
+                "key_disagreements":    research.get("key_disagreements", []),
+                "position_conviction":  conviction,
             })
 
             _emit(q, "researchers",
@@ -253,73 +261,195 @@ def run_analysis(job_id: str, ticker: str, capital: float,
         except Exception as e:
             logger.error(f"Researcher failed: {traceback.format_exc()}")
             _emit(q, "researchers", f"Researcher error: {e}", status="error")
+            research_summary = {
+                "recommended_action": rec_action,
+                "investment_thesis": "",
+                "bull_case_summary": "",
+                "bear_case_summary": "",
+                "position_conviction": "LOW",
+                "key_risks": [],
+                "key_opportunities": [],
+            }
 
-        # ── Stage 4+5: CIO + Trader via full pipeline ────────────────────
+        # ── Stage 4: CIO Decision ────────────────────────────────────────
         _emit(q, "cio", "CIO synthesising analyst + research inputs...")
-        _emit(q, "traders", "Trader team computing execution plan...")
-        cio_action = rec_action
-        cio_conf   = conf
+        cio_action    = rec_action
+        cio_conf      = conf
         cio_reasoning = analyst_summary.get("reasoning", "")
-        trade_summary = {}
-
+        cio_data      = {}
         try:
-            from pipeline import TradingPipeline
-            pipeline = TradingPipeline(
-                max_debate_rounds=2,
-                max_trade_iterations=2,
-                require_human_approval=False,
-                verbose=False,
-            )
-            full_result = pipeline.run_with_details(
-                ticker=ticker,
-                available_capital=capital,
-                risk_tolerance=risk,
-                enable_trading=True,
-            )
+            from langchain_core.prompts import ChatPromptTemplate
+            from langchain_core.output_parsers import JsonOutputParser
 
-            fd    = full_result.get("final_decision") or {}
-            trade = full_result.get("trade_execution") or {}
+            FINAL_DECISION_PROMPT = """You are the Chief Investment Officer making the final trading decision.
 
-            cio_action    = fd.get("action", rec_action)
-            cio_conf      = float(fd.get("confidence", conf))
-            cio_reasoning = fd.get("reasoning", cio_reasoning)
+TICKER: {ticker}
 
-            ep = trade.get("entry_price", price)
-            sl = trade.get("stop_loss")
-            tp = trade.get("take_profit")
+ANALYST TEAM REPORT:
+Signal: {analyst_signal}
+Confidence: {analyst_confidence}
+Reasoning: {analyst_reasoning}
 
-            trade_summary = _safe({
-                "action":      trade.get("action", cio_action),
-                "quantity":    trade.get("quantity", trade.get("shares", "N/A")),
-                "entry_price": ep,
-                "stop_loss":   sl,
-                "take_profit": tp,
-                "order_type":  trade.get("order_type", "MARKET"),
-                "status":      trade.get("status", "PLANNED"),
-                "notes":       trade.get("notes", trade.get("reasoning", "")),
+RESEARCHER TEAM REPORT:
+Investment Thesis: {research_thesis}
+Bull Case: {bull_case}
+Bear Case: {bear_case}
+Risk/Reward: {risk_reward}
+Researcher Recommendation: {research_action}
+Conviction: {research_conviction}
+
+KEY RISKS: {key_risks}
+KEY OPPORTUNITIES: {key_opportunities}
+
+CONSENSUS POINTS: {consensus_points}
+DISAGREEMENTS: {disagreements}
+
+Make the final trading decision. Respond ONLY in JSON format:
+{{
+    "final_action": "STRONG_BUY" | "BUY" | "HOLD" | "SELL" | "STRONG_SELL",
+    "confidence": <float 0.0-1.0>,
+    "position_size": "FULL" | "THREE_QUARTER" | "HALF" | "QUARTER" | "NONE",
+    "time_horizon": "SHORT" | "MEDIUM" | "LONG",
+    "entry_strategy": "<how to enter the position>",
+    "exit_strategy": "<when to exit or stop-loss levels>",
+    "risk_management": "<position sizing and risk controls>",
+    "key_catalysts": ["<catalyst>"],
+    "reasoning": "<comprehensive reasoning>",
+    "dissenting_view": "<counter-arguments>"
+}}"""
+
+            decision_prompt = ChatPromptTemplate.from_template(FINAL_DECISION_PROMPT)
+            parser = JsonOutputParser()
+            chain = decision_prompt | llm | parser
+
+            cio_result = chain.invoke({
+                "ticker":               ticker,
+                "analyst_signal":       analyst_summary.get("final_signal", "N/A"),
+                "analyst_confidence":   f"{analyst_summary.get('confidence', 0):.0%}",
+                "analyst_reasoning":    analyst_summary.get("reasoning", "N/A"),
+                "research_thesis":      research_summary.get("investment_thesis", "N/A"),
+                "bull_case":            research_summary.get("bull_case_summary", "N/A"),
+                "bear_case":            research_summary.get("bear_case_summary", "N/A"),
+                "risk_reward":          research_summary.get("risk_reward_assessment", "N/A"),
+                "research_action":      research_summary.get("recommended_action", "N/A"),
+                "research_conviction":  research_summary.get("position_conviction", "N/A"),
+                "key_risks":            ", ".join(research_summary.get("key_risks", [])[:5]),
+                "key_opportunities":    ", ".join(research_summary.get("key_opportunities", [])[:5]),
+                "consensus_points":     ", ".join(research_summary.get("consensus_points", [])[:3]),
+                "disagreements":        ", ".join(research_summary.get("key_disagreements", [])[:3]),
+            })
+
+            cio_action    = cio_result.get("final_action", rec_action)
+            cio_conf      = float(cio_result.get("confidence", conf))
+            cio_reasoning = cio_result.get("reasoning", cio_reasoning)
+
+            cio_data = _safe({
+                "action":           cio_action,
+                "confidence":       cio_conf,
+                "reasoning":        cio_reasoning,
+                "position_size":    cio_result.get("position_size", "N/A"),
+                "time_horizon":     cio_result.get("time_horizon", "MEDIUM"),
+                "entry_strategy":   cio_result.get("entry_strategy", ""),
+                "exit_strategy":    cio_result.get("exit_strategy", ""),
+                "risk_management":  cio_result.get("risk_management", ""),
+                "key_catalysts":    cio_result.get("key_catalysts", []),
+                "dissenting_view":  cio_result.get("dissenting_view", ""),
             })
 
             _emit(q, "cio",
                   f"CIO decision: {cio_action} ({cio_conf:.0%} confidence)",
-                  status="done",
-                  data={"action": cio_action, "confidence": cio_conf,
-                        "reasoning": cio_reasoning,
-                        "position_size": fd.get("position_size", "N/A"),
-                        "time_horizon":  fd.get("time_horizon", "MEDIUM"),
-                        "entry_strategy": fd.get("entry_strategy", ""),
-                        "exit_strategy":  fd.get("exit_strategy", ""),
-                        "key_catalysts":  fd.get("key_catalysts", [])})
+                  status="done", data=cio_data)
 
-            ep_str = f"${float(ep):.2f}" if ep else "market"
+        except Exception as e:
+            logger.error(f"CIO decision failed: {traceback.format_exc()}")
+            _emit(q, "cio", f"CIO error: {e} — using researcher recommendation", status="error")
+            cio_data = {"action": cio_action, "confidence": cio_conf, "reasoning": cio_reasoning}
+
+        # ── Stage 5: Trader Execution ────────────────────────────────────
+        _emit(q, "traders", f"Trader team computing execution plan for {cio_action}...")
+        trade_summary = {}
+        try:
+            from traders import TraderTeam
+
+            # Build a final_decision dict that matches what TraderAgent expects
+            final_decision_for_trader = {
+                "ticker":        ticker,
+                "action":        cio_action,
+                "confidence":    cio_conf,
+                "position_size": cio_data.get("position_size", "HALF"),
+                "time_horizon":  cio_data.get("time_horizon", "MEDIUM"),
+                "entry_strategy": cio_data.get("entry_strategy", ""),
+                "exit_strategy":  cio_data.get("exit_strategy", ""),
+                "reasoning":     cio_reasoning,
+                "analyst_report":  analyst_summary,
+                "research_report": research_summary,
+            }
+
+            t_team = TraderTeam(
+                llm=llm,
+                max_iterations=2,
+                score_threshold=0.5,
+                require_human_approval=False,   # Web UI: no CLI blocking input
+            )
+
+            trade_result = t_team.execute_trade(
+                ticker=ticker,
+                analyst_report=analyst_summary,
+                research_report=research_summary,
+                final_decision=final_decision_for_trader,
+                market_data=market_data,
+                available_capital=capital,
+                risk_tolerance=risk,
+                portfolio=[],
+            )
+
+            td = trade_result.get("trade_decision") or {}
+            ep = float(market_data.get("current_price") or price)
+            sl_pct = float(td.get("stop_loss_percent") or 5)
+            tp_pct = float(td.get("take_profit_percent") or 10)
+
+            if td.get("action", "HOLD") == "BUY":
+                sl_price = ep * (1 - sl_pct / 100)
+                tp_price = ep * (1 + tp_pct / 100)
+            else:
+                sl_price = ep * (1 + sl_pct / 100)
+                tp_price = ep * (1 - tp_pct / 100)
+
+            qty_pct = float(td.get("quantity_percent") or 0)
+            qty = int((capital * qty_pct) / ep) if ep > 0 and qty_pct > 0 else 0
+
+            trade_summary = _safe({
+                "action":       td.get("action", cio_action),
+                "order_type":   td.get("order_type", "MARKET"),
+                "quantity":     qty,
+                "quantity_percent": qty_pct,
+                "entry_price":  ep,
+                "stop_loss":    round(sl_price, 2),
+                "take_profit":  round(tp_price, 2),
+                "status":       trade_result.get("execution_status", "PLANNED"),
+                "reasoning":    td.get("reasoning", ""),
+                "confidence":   td.get("confidence", cio_conf),
+                "risk_reward":  td.get("risk_reward_ratio", 1.0),
+                "entry_timing": td.get("entry_timing", "IMMEDIATE"),
+                "iterations":   trade_result.get("iterations_used", 1),
+            })
+
+            action_str = trade_summary.get("action", cio_action)
+            ep_str = f"Rs.{ep:.2f}" if ep else "market"
+            qty_str = str(qty) if qty > 0 else "N/A"
             _emit(q, "traders",
-                  f"Execution: {trade_summary.get('action')} "
-                  f"{trade_summary.get('quantity','?')} shares @ {ep_str}",
+                  f"Execution plan: {action_str} {qty_str} shares @ {ep_str} "
+                  f"| SL: Rs.{round(sl_price,2)} | TP: Rs.{round(tp_price,2)}",
                   status="done", data=trade_summary)
 
         except Exception as e:
-            logger.error(f"CIO/Trader failed: {traceback.format_exc()}")
-            _emit(q, "cio",    f"CIO error: {e}", status="error")
-            _emit(q, "traders", f"Trader skipped due to CIO error", status="error")
+            logger.error(f"Trader failed: {traceback.format_exc()}")
+            _emit(q, "traders", f"Trader error: {e}", status="error")
+            trade_summary = {
+                "action": cio_action,
+                "status": "ERROR",
+                "entry_price": price,
+            }
 
         # ── Final result ─────────────────────────────────────────────────
         _emit(q, "complete",
@@ -330,9 +460,13 @@ def run_analysis(job_id: str, ticker: str, capital: float,
                   "action":        cio_action,
                   "confidence":    cio_conf,
                   "reasoning":     cio_reasoning,
-                  "position_size": analyst_summary.get("position_size", "N/A"),
-                  "time_horizon":  analyst_summary.get("time_horizon", "MEDIUM"),
+                  "position_size": cio_data.get("position_size", analyst_summary.get("position_size", "N/A")),
+                  "time_horizon":  cio_data.get("time_horizon", analyst_summary.get("time_horizon", "MEDIUM")),
                   "risk_factors":  analyst_summary.get("risk_factors", []),
+                  "key_catalysts": cio_data.get("key_catalysts", []),
+                  "entry_strategy": cio_data.get("entry_strategy", ""),
+                  "exit_strategy":  cio_data.get("exit_strategy", ""),
+                  "dissenting_view": cio_data.get("dissenting_view", ""),
                   "analyst_report":  analyst_summary,
                   "research_report": research_summary,
                   "trade_execution": trade_summary,
@@ -353,6 +487,8 @@ def run_analysis(job_id: str, ticker: str, capital: float,
 
 @app.route("/")
 def index():
+    if (DIST_DIR / "index.html").exists():
+        return app.send_static_file("index.html")
     return render_template("index.html")
 
 
@@ -515,6 +651,81 @@ def get_chart_data(symbol: str, period: str):
         }))
     except Exception as e:
         logger.error(f"Error fetching chart data for {symbol}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/indices")
+def get_indices():
+    """Fetch live NSE index data: NIFTY 50, SENSEX, NIFTY BANK, NIFTY IT."""
+    try:
+        import yfinance as yf
+
+        INDICES = {
+            "NIFTY 50":   "^NSEI",
+            "SENSEX":     "^BSESN",
+            "NIFTY BANK": "^NSEBANK",
+            "NIFTY IT":   "^CNXIT",
+        }
+
+        result = {}
+        for display_name, symbol in INDICES.items():
+            try:
+                ticker = yf.Ticker(symbol)
+                # Get today's intraday data for current price + day range
+                hist = ticker.history(period="2d", interval="1d")
+                info = ticker.fast_info  # lightweight, no heavy API calls
+
+                if hist.empty:
+                    raise ValueError(f"No data for {symbol}")
+
+                today   = hist.iloc[-1]
+                prev    = hist.iloc[-2] if len(hist) >= 2 else hist.iloc[-1]
+
+                current = round(float(today["Close"]), 2)
+                prev_cl = round(float(prev["Close"]), 2)
+                change  = round(current - prev_cl, 2)
+                change_pct = round((change / prev_cl) * 100, 2) if prev_cl else 0.0
+                day_high = round(float(today["High"]), 2)
+                day_low  = round(float(today["Low"]), 2)
+                volume   = int(today["Volume"]) if not math.isnan(float(today["Volume"])) else 0
+
+                # Format volume
+                if volume >= 10_000_000:
+                    vol_str = f"{volume / 10_000_000:.1f}Cr"
+                elif volume >= 100_000:
+                    vol_str = f"{volume / 100_000:.1f}L"
+                else:
+                    vol_str = str(volume)
+
+                trend = "up" if change > 0 else ("down" if change < 0 else "neutral")
+
+                result[display_name] = {
+                    "symbol":     symbol,
+                    "value":      current,
+                    "change":     change,
+                    "changePct":  change_pct,
+                    "high":       day_high,
+                    "low":        day_low,
+                    "vol":        vol_str,
+                    "trend":      trend,
+                    "prev_close": prev_cl,
+                }
+            except Exception as e:
+                logger.warning(f"Failed to fetch {symbol}: {e}")
+                result[display_name] = None
+
+        advancing = sum(1 for v in result.values() if v and v["trend"] == "up")
+        declining = sum(1 for v in result.values() if v and v["trend"] == "down")
+
+        return jsonify(_safe({
+            "indices": result,
+            "advancing": advancing,
+            "declining": declining,
+            "timestamp": datetime.utcnow().isoformat(),
+        }))
+
+    except Exception as e:
+        logger.error(f"Indices fetch error: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
 
