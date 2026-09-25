@@ -1,7 +1,8 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Clock, Sparkles, TrendingUp, Cpu, ArrowRight, Zap, Award } from 'lucide-react';
 
-export default function HomeTab({ setActiveTab, pastAnalyses, onSelectReport }) {
+export default function HomeTab({ pastAnalyses, onSelectReport }) {
   const recentAnalyses = pastAnalyses.slice(0, 3);
 
   return (
@@ -62,23 +63,23 @@ export default function HomeTab({ setActiveTab, pastAnalyses, onSelectReport }) 
           </p>
 
           <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
-            <button 
-              onClick={() => setActiveTab('analysis')} 
+            <Link 
+              to="/analysis" 
               className="btn-orange"
-              style={{ padding: '14px 32px', fontSize: '1rem' }}
+              style={{ padding: '14px 32px', fontSize: '1rem', textDecoration: 'none' }}
             >
               <Zap size={18} />
               <span>Start New Analysis</span>
-            </button>
+            </Link>
 
-            <button 
-              onClick={() => setActiveTab('past')} 
+            <Link 
+              to="/past-analysis" 
               className="btn-white"
-              style={{ padding: '14px 28px' }}
+              style={{ padding: '14px 28px', textDecoration: 'none' }}
             >
               <Clock size={18} />
               <span>View Past Analysis</span>
-            </button>
+            </Link>
           </div>
 
         </div>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import HomeTab from './components/HomeTab';
@@ -8,7 +9,6 @@ import InsightsTab from './components/InsightsTab';
 import ReportModal from './components/ReportModal';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('home'); // 'home' | 'analysis' | 'past' | 'insights'
   const [selectedReport, setSelectedReport] = useState(null);
 
   // Lazy initial state for pastAnalyses from localStorage
@@ -46,35 +46,44 @@ export default function App() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-dark)' }}>
       {/* NAVBAR */}
-      <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Navbar />
 
-      {/* MAIN CONTENT AREA - Keep all 3 tabs mounted so background operations never stop */}
+      {/* MAIN ROUTED CONTENT */}
       <main style={{ flex: 1 }}>
-        <div style={{ display: activeTab === 'home' ? 'block' : 'none' }}>
-          <HomeTab 
-            setActiveTab={setActiveTab} 
-            pastAnalyses={pastAnalyses} 
-            onSelectReport={setSelectedReport} 
+        <Routes>
+          <Route 
+            path="/" 
+            element={
+              <HomeTab 
+                pastAnalyses={pastAnalyses} 
+                onSelectReport={setSelectedReport} 
+              />
+            } 
           />
-        </div>
-
-        <div style={{ display: activeTab === 'analysis' ? 'block' : 'none' }}>
-          <AnalysisTab 
-            onAnalysisComplete={handleAnalysisComplete} 
+          <Route 
+            path="/analysis" 
+            element={
+              <AnalysisTab 
+                onAnalysisComplete={handleAnalysisComplete} 
+              />
+            } 
           />
-        </div>
-
-        <div style={{ display: activeTab === 'past' ? 'block' : 'none' }}>
-          <PastAnalysisTab 
-            pastAnalyses={pastAnalyses} 
-            onClearHistory={handleClearHistory} 
-            onSelectReport={setSelectedReport} 
+          <Route 
+            path="/past-analysis" 
+            element={
+              <PastAnalysisTab 
+                pastAnalyses={pastAnalyses} 
+                onClearHistory={handleClearHistory} 
+                onSelectReport={setSelectedReport} 
+              />
+            } 
           />
-        </div>
-
-        <div style={{ display: activeTab === 'insights' ? 'block' : 'none' }}>
-          <InsightsTab />
-        </div>
+          <Route 
+            path="/insights" 
+            element={<InsightsTab />} 
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </main>
 
       {/* FOOTER */}

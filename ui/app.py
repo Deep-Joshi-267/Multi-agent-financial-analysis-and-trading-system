@@ -15,6 +15,12 @@ import time
 import queue
 import logging
 import traceback
+import urllib.request
+import re
+import hashlib
+import xml.etree.ElementTree as ET
+import requests
+from bs4 import BeautifulSoup
 from datetime import datetime
 from pathlib import Path
 
@@ -729,6 +735,223 @@ def get_indices():
         return jsonify({"error": str(e)}), 500
 
 
+# ── News Cache & Live Scraping ──────────────────────────────────────────────
+_news_cache = {"data": [], "fetched_at": None}
+NEWS_CACHE_TTL = 3 * 3600  # 3 hours in seconds
+
+
+def _classify_sentiment_llm(headline, summary):
+    """Use Groq LLM to classify financial news sentiment as Bullish, Bearish, or Neutral."""
+    try:
+        llm = _get_llm(temperature=0.1)
+        prompt = (
+            "You are a expert financial sentiment analyst. "
+            "Analyze the following stock market news item and classify its overall market sentiment as EXACTLY ONE of these three words: Bullish, Bearish, or Neutral.\n\n"
+            f"Headline: {headline}\n"
+            f"Summary: {summary}\n\n"
+            "Respond ONLY with the single word (Bullish, Bearish, or Neutral) and nothing else."
+        )
+        res = llm.invoke(prompt)
+        text = res.content.strip().title()
+        if "Bullish" in text:
+            return "Bullish"
+        elif "Bearish" in text:
+            return "Bearish"
+        elif "Neutral" in text:
+            return "Neutral"
+    except Exception as e:
+        logger.warning(f"LLM sentiment classification fallback due to: {e}")
+
+    # Fallback rule-based analysis if LLM fails or is unavailable
+    comb = f"{headline} {summary}".lower()
+    bull_words = ["surge", "surges", "jump", "jumps", "gain", "gains", "high", "rally", "upside", "buy", "growth", "record", "profit", "rise", "rises", "reclaim", "soar"]
+    bear_words = ["fall", "falls", "slip", "slips", "drop", "drops", "decline", "declines", "down", "sell", "loss", "tighten", "pressure", "warn", "warns", "crash", "plunge", "cut"]
+    b_score = sum(1 for w in bull_words if w in comb)
+    r_score = sum(1 for w in bear_words if w in comb)
+    if b_score > r_score:
+        return "Bullish"
+    elif r_score > b_score:
+        return "Bearish"
+    return "Neutral"
+
+
+def _fetch_live_news():
+    """Scrape MoneyControl, LiveMint, and CNBC live stock market news."""
+    articles = []
+
+    # 1. MoneyControl (Stock market page scraping)
+    try:
+        mc_res = requests.get(
+            "https://www.moneycontrol.com/news/business/stocks/",
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+            timeout=8
+        )
+        if mc_res.status_code == 200:
+            mc_soup = BeautifulSoup(mc_res.text, "html.parser")
+            seen_urls = set()
+            count = 0
+            for a in mc_soup.find_all("a"):
+                href = a.get("href", "")
+                title = a.get_text(strip=True)
+                if "moneycontrol.com/news/" in href and len(title) > 20 and href not in seen_urls:
+                    # Filter out generic tags/categories
+                    if any(x in href for x in ["/tags/", "/podcast/", "/personal-finance/income-tax"]):
+                        continue
+                    seen_urls.add(href)
+                    parent_li = a.find_parent("li")
+                    p_desc = parent_li.find("p") if parent_li else None
+                    desc = p_desc.get_text(strip=True) if p_desc else title
+                    
+                    # Extract tickers/tags if present in title
+                    tags = []
+                    for word in re.findall(r"\b[A-Z]{3,10}\b", title):
+                        if word not in ["BUY", "SELL", "IPO", "STOCK", "NEWS", "INDIAN", "INDIA", "MARKET", "MARKETS", "CHIEF", "NEW", "TOP"]:
+                            tags.append(word)
+
+                    articles.append({
+                        "id": hashlib.md5(href.encode()).hexdigest()[:10],
+                        "headline": title,
+                        "summary": desc,
+                        "url": href,
+                        "source": "Moneycontrol",
+                        "sourceInitials": "M",
+                        "sourceBg": "#dc2626",
+                        "timeAgo": "Recent",
+                        "category": "Stocks",
+                        "tags": tags[:3],
+                    })
+                    count += 1
+                    if count >= 5:
+                        break
+    except Exception as e:
+        logger.warning(f"Error fetching MoneyControl news: {e}")
+
+    # 2. Livemint (RSS feed)
+    try:
+        lm_req = urllib.request.Request(
+            "https://www.livemint.com/rss/markets",
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        )
+        with urllib.request.urlopen(lm_req, timeout=8) as resp:
+            root = ET.fromstring(resp.read())
+            count = 0
+            for item in root.findall(".//item"):
+                t = item.find("title").text if item.find("title") is not None else ""
+                l = item.find("link").text if item.find("link") is not None else ""
+                d = item.find("description").text if item.find("description") is not None else ""
+                p = item.find("pubDate").text if item.find("pubDate") is not None else ""
+                d_clean = re.sub(r"<[^>]+>", "", d).strip() if d else t
+                
+                if t and l:
+                    tags = []
+                    for word in re.findall(r"\b[A-Z]{3,10}\b", t):
+                        if word not in ["BUY", "SELL", "IPO", "STOCK", "NEWS", "INDIAN", "INDIA", "MARKET", "MARKETS", "CHIEF", "NEW", "TOP", "NIFTY", "SENSEX"]:
+                            tags.append(word)
+
+                    articles.append({
+                        "id": hashlib.md5(l.encode()).hexdigest()[:10],
+                        "headline": t,
+                        "summary": d_clean[:220] + ("..." if len(d_clean) > 220 else ""),
+                        "url": l,
+                        "source": "Livemint",
+                        "sourceInitials": "LM",
+                        "sourceBg": "#2563eb",
+                        "timeAgo": p[5:16] if p and len(p) >= 16 else "Recent",
+                        "category": "Markets",
+                        "tags": tags[:3],
+                    })
+                    count += 1
+                    if count >= 4:
+                        break
+    except Exception as e:
+        logger.warning(f"Error fetching Livemint RSS: {e}")
+
+    # 3. CNBC (RSS feed)
+    try:
+        cnbc_req = urllib.request.Request(
+            "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664",
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        )
+        with urllib.request.urlopen(cnbc_req, timeout=8) as resp:
+            root = ET.fromstring(resp.read())
+            count = 0
+            for item in root.findall(".//item"):
+                t = item.find("title").text if item.find("title") is not None else ""
+                l = item.find("link").text if item.find("link") is not None else ""
+                d = item.find("description").text if item.find("description") is not None else ""
+                p = item.find("pubDate").text if item.find("pubDate") is not None else ""
+                d_clean = re.sub(r"<[^>]+>", "", d).strip() if d else t
+                
+                if t and l:
+                    articles.append({
+                        "id": hashlib.md5(l.encode()).hexdigest()[:10],
+                        "headline": t,
+                        "summary": d_clean[:220] + ("..." if len(d_clean) > 220 else ""),
+                        "url": l,
+                        "source": "CNBC",
+                        "sourceInitials": "C",
+                        "sourceBg": "#0284c7",
+                        "timeAgo": p[5:16] if p and len(p) >= 16 else "Recent",
+                        "category": "Global",
+                        "tags": [],
+                    })
+                    count += 1
+                    if count >= 3:
+                        break
+    except Exception as e:
+        logger.warning(f"Error fetching CNBC RSS: {e}")
+
+    # Take top 10 unique articles across the sources
+    seen = set()
+    final_10 = []
+    for art in articles:
+        if art["headline"] not in seen:
+            seen.add(art["headline"])
+            # Calculate sentiment using AI / Groq LLM
+            art["sentiment"] = _classify_sentiment_llm(art["headline"], art["summary"])
+            final_10.append(art)
+            if len(final_10) == 10:
+                break
+
+    return final_10
+
+
+@app.route("/api/news")
+def get_live_news():
+    """Fetch live market news from MoneyControl, LiveMint, CNBC with 3-hr cache & LLM sentiment."""
+    global _news_cache
+    now_ts = time.time()
+
+    # Return cached data if available and fresh (< 3 hours)
+    if (
+        _news_cache["data"]
+        and _news_cache["fetched_at"]
+        and (now_ts - _news_cache["fetched_at"]) < NEWS_CACHE_TTL
+    ):
+        return jsonify(_safe({
+            "news": _news_cache["data"],
+            "cached": True,
+            "fetched_at": datetime.fromtimestamp(_news_cache["fetched_at"]).isoformat(),
+            "ttl_remaining_sec": int(NEWS_CACHE_TTL - (now_ts - _news_cache["fetched_at"])),
+        }))
+
+    try:
+        live_news = _fetch_live_news()
+        if live_news:
+            _news_cache["data"] = live_news
+            _news_cache["fetched_at"] = now_ts
+
+        return jsonify(_safe({
+            "news": _news_cache["data"],
+            "cached": False,
+            "fetched_at": datetime.fromtimestamp(now_ts).isoformat(),
+            "ttl_remaining_sec": NEWS_CACHE_TTL,
+        }))
+    except Exception as e:
+        logger.error(f"Failed to fetch live news: {traceback.format_exc()}")
+        return jsonify({"error": str(e), "news": _news_cache.get("data", [])}), 500
+
+
 @app.route("/api/health")
 def health():
     key = os.getenv("GROQ_API_KEY", "")
@@ -738,6 +961,17 @@ def health():
         "groq_configured": bool(key and key.startswith("gsk_") and len(key) > 20),
         "timestamp": datetime.utcnow().isoformat(),
     })
+
+
+from flask import send_from_directory
+
+@app.errorhandler(404)
+def not_found(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "API route not found"}), 404
+    if (DIST_DIR / "index.html").exists():
+        return send_from_directory(DIST_DIR, "index.html")
+    return render_template("index.html")
 
 
 if __name__ == "__main__":

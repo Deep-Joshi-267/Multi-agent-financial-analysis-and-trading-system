@@ -232,20 +232,28 @@ function InsightCard({ insight }) {
 }
 
 // ── News Card ─────────────────────────────────────────────────────────────────
+// ── News Card ─────────────────────────────────────────────────────────────────
 function NewsCard({ item }) {
   const ss = SENTIMENT_STYLES[item.sentiment] || SENTIMENT_STYLES.Neutral;
   const [hovered, setHovered] = useState(false);
 
   return (
-    <div
+    <a
+      href={item.url}
+      target="_blank"
+      rel="noopener noreferrer"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
+        textDecoration: 'none',
+        color: 'inherit',
         background: hovered ? 'var(--bg-card-hover)' : 'var(--bg-card)',
-        border: `1px solid ${hovered ? 'rgba(255,87,34,0.3)' : 'var(--border)'}`,
+        border: `1px solid ${hovered ? 'rgba(255,87,34,0.4)' : 'var(--border)'}`,
         borderRadius: 'var(--radius-md)', padding: '18px 20px',
         display: 'flex', gap: '16px', alignItems: 'flex-start',
         transition: 'all 0.2s ease', cursor: 'pointer',
+        boxShadow: hovered ? '0 8px 24px rgba(0,0,0,0.4)' : 'none',
+        transform: hovered ? 'translateY(-1px)' : 'none',
       }}
     >
       <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: item.sourceBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.72rem', color: '#fff', flexShrink: 0, letterSpacing: '0.01em' }}>
@@ -254,7 +262,9 @@ function NewsCard({ item }) {
 
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '7px' }}>
-          <h4 style={{ fontWeight: 700, fontSize: '0.9rem', lineHeight: 1.4, color: '#fff', margin: 0 }}>{item.headline}</h4>
+          <h4 style={{ fontWeight: 700, fontSize: '0.9rem', lineHeight: 1.4, color: hovered ? 'var(--orange-light)' : '#fff', margin: 0, transition: 'color 0.2s ease' }}>
+            {item.headline}
+          </h4>
           <span style={{ flexShrink: 0, padding: '3px 10px', borderRadius: '99px', fontSize: '0.69rem', fontWeight: 700, background: ss.bg, color: ss.color, border: `1px solid ${ss.border}`, display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
             <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: ss.color }} />
             {item.sentiment}
@@ -268,14 +278,14 @@ function NewsCard({ item }) {
           <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.67rem', fontWeight: 700, background: 'rgba(255,87,34,0.1)', color: 'var(--orange-light)', border: '1px solid rgba(255,87,34,0.2)' }}>
             {item.category}
           </span>
-          {item.tags.map(t => (
+          {item.tags && item.tags.map(t => (
             <span key={t} style={{ padding: '2px 7px', borderRadius: '4px', fontSize: '0.64rem', fontWeight: 700, background: 'rgba(255,255,255,0.05)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
               {t}
             </span>
           ))}
         </div>
       </div>
-    </div>
+    </a>
   );
 }
 
@@ -293,6 +303,7 @@ function SectionLabel({ text, right }) {
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
+// ── Main Component ────────────────────────────────────────────────────────────
 export default function InsightsTab() {
   const [activeIdx, setActiveIdx]     = useState('NIFTY 50');
   const [newsFilter, setNewsFilter]   = useState('All');
@@ -306,6 +317,31 @@ export default function InsightsTab() {
   const [indexError, setIndexError]   = useState(null);
   const [breadth, setBreadth]         = useState({ advancing: 0, declining: 0, unchanged: 0 });
 
+  // Live news state
+  const [newsList, setNewsList]       = useState([]);
+  const [newsLoading, setNewsLoading] = useState(true);
+  const [newsError, setNewsError]     = useState(null);
+
+  const fetchNews = useCallback(async () => {
+    setNewsLoading(true);
+    setNewsError(null);
+    try {
+      const res = await fetch('/api/news');
+      const ct = res.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) {
+        throw new Error('Server returned HTML instead of JSON.');
+      }
+      const json = await res.json();
+      if (json.news && Array.isArray(json.news)) {
+        setNewsList(json.news);
+      }
+    } catch (err) {
+      setNewsError(err.message);
+    } finally {
+      setNewsLoading(false);
+    }
+  }, []);
+
   const fetchIndices = useCallback(async () => {
     setIndexLoading(true);
     setIndexError(null);
@@ -316,9 +352,6 @@ export default function InsightsTab() {
       const res = await fetch('/api/indices', { signal: controller.signal });
       clearTimeout(timeout);
 
-      // Check Content-Type BEFORE calling .json() — Flask's catch-all
-      // returns index.html (text/html) when the route doesn't exist yet,
-      // which causes the "Unexpected token '<'" JSON parse error.
       const ct = res.headers.get('content-type') || '';
       if (!ct.includes('application/json')) {
         throw new Error(
@@ -357,38 +390,49 @@ export default function InsightsTab() {
     }
   }, []);
 
-  // Fetch on mount
-  useEffect(() => { fetchIndices(); }, [fetchIndices]);
+  // Fetch indices & news on mount
+  useEffect(() => {
+    fetchIndices();
+    fetchNews();
+  }, [fetchIndices, fetchNews]);
 
-  // Auto-refresh every 60 seconds during market hours
+  // Auto-refresh indices every 60s
   useEffect(() => {
     const interval = setInterval(fetchIndices, 60_000);
     return () => clearInterval(interval);
   }, [fetchIndices]);
 
+  // Auto-refresh news every 3 hours
+  useEffect(() => {
+    const interval = setInterval(fetchNews, 3 * 3600 * 1000);
+    return () => clearInterval(interval);
+  }, [fetchNews]);
+
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true);
-    // Rotate insights
     setShownIdxs(prev => {
       const n = AI_INSIGHTS_POOL.length;
       return [(prev[0] + 1) % n, (prev[0] + 2) % n, (prev[0] + 3) % n];
     });
-    // Re-fetch live index data
-    fetchIndices().finally(() => setIsRefreshing(false));
-  }, [fetchIndices]);
+    Promise.all([fetchIndices(), fetchNews()]).finally(() => setIsRefreshing(false));
+  }, [fetchIndices, fetchNews]);
 
   const idx  = indexData[activeIdx] || INDEX_FALLBACK;
   const isUp = idx.trend === 'up', isDn = idx.trend === 'down';
   const trendColor = isUp ? '#10b981' : isDn ? '#ef4444' : '#f59e0b';
 
-  // Overall sentiment from live breadth
   const overallSentiment = breadth.advancing >= 3 ? 'Bullish'
     : breadth.declining >= 3 ? 'Bearish' : 'Neutral';
 
   const fmt = (v, decimals = 2) =>
     v != null ? v.toLocaleString('en-IN', { minimumFractionDigits: decimals }) : '—';
 
-  const filteredNews = newsFilter === 'All' ? NEWS_POOL : NEWS_POOL.filter(n => n.sentiment === newsFilter);
+  // Use live fetched news if available, or fallback to pool while loading
+  const currentNewsPool = newsList.length > 0 ? newsList : NEWS_POOL;
+  const filteredNews = newsFilter === 'All'
+    ? currentNewsPool
+    : currentNewsPool.filter(n => n.sentiment === newsFilter);
+
   const now = new Date();
 
   return (
@@ -401,7 +445,7 @@ export default function InsightsTab() {
             Insights &amp; News
           </h1>
           <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-            AI-powered market intelligence · Updated live · NSE/BSE
+            AI-powered market intelligence · Updated live · MoneyControl · LiveMint · CNBC
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
@@ -423,7 +467,6 @@ export default function InsightsTab() {
       {/* ── MARKET SENTIMENT ────────────────────────────────────────── */}
       <SectionLabel text="Overall Market Sentiment" />
 
-      {/* Error banner — shown when Flask doesn’t have /api/indices yet */}
       {indexError && (
         <div style={{
           background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)',
@@ -527,7 +570,7 @@ export default function InsightsTab() {
             <SentimentGauge label={overallSentiment} />
           </div>
 
-          {/* Market Breadth - live from API */}
+          {/* Market Breadth */}
           <div style={{ minWidth: '185px' }}>
             <div style={{ fontSize: '0.63rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.08em', marginBottom: '14px', textTransform: 'uppercase' }}>Market Breadth</div>
             {[
@@ -591,23 +634,18 @@ export default function InsightsTab() {
       />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {filteredNews.length === 0
-          ? <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)', fontSize: '0.88rem' }}>No {newsFilter.toLowerCase()} news at this moment.</div>
-          : filteredNews.map(item => <NewsCard key={item.id} item={item} />)
-        }
+        {newsLoading && newsList.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)', fontSize: '0.88rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+            <Loader size={18} style={{ animation: 'spin 1s linear infinite' }} /> Loading live news from MoneyControl, LiveMint &amp; CNBC…
+          </div>
+        ) : filteredNews.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+            No {newsFilter.toLowerCase()} news at this moment.
+          </div>
+        ) : (
+          filteredNews.slice(0, 10).map(item => <NewsCard key={item.id} item={item} />)
+        )}
       </div>
-
-      {filteredNews.length > 0 && (
-        <div style={{ textAlign: 'center', marginTop: '26px' }}>
-          <button
-            style={{ padding: '10px 28px', borderRadius: 'var(--radius-md)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '7px', transition: 'all 0.2s ease' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(255,87,34,0.4)'; e.currentTarget.style.color = 'var(--orange-light)'; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
-          >
-            <Globe size={14} /> Load more news <ChevronRight size={14} />
-          </button>
-        </div>
-      )}
     </div>
   );
 }

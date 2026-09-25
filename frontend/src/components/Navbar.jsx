@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { Activity, Flame, Clock, BarChart3, Newspaper } from 'lucide-react';
 
-export default function Navbar({ activeTab, setActiveTab }) {
+export default function Navbar() {
   const [apiStatus, setApiStatus] = useState({ ok: false, text: 'Checking API...' });
+  const location = useLocation();
 
   useEffect(() => {
     const checkHealth = async () => {
@@ -20,6 +22,26 @@ export default function Navbar({ activeTab, setActiveTab }) {
     };
     checkHealth();
   }, []);
+
+  const getTabStyle = (path) => {
+    const isActive = location.pathname === path || (path === '/' && location.pathname === '');
+    return {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      padding: '8px 20px',
+      borderRadius: '99px',
+      border: 'none',
+      fontSize: '0.88rem',
+      fontWeight: 700,
+      cursor: 'pointer',
+      textDecoration: 'none',
+      transition: 'all 0.2s ease',
+      background: isActive ? 'var(--gradient-orange-red)' : 'transparent',
+      color: isActive ? '#ffffff' : 'var(--text-secondary)',
+      boxShadow: isActive ? '0 4px 14px var(--orange-glow)' : 'none'
+    };
+  };
 
   return (
     <header style={{
@@ -40,9 +62,9 @@ export default function Navbar({ activeTab, setActiveTab }) {
       }}>
         
         {/* LOGO */}
-        <div 
-          onClick={() => setActiveTab('home')}
-          style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
+        <Link 
+          to="/"
+          style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', textDecoration: 'none', color: 'inherit' }}
         >
           <div style={{
             width: '38px',
@@ -70,9 +92,9 @@ export default function Navbar({ activeTab, setActiveTab }) {
               }}>INDIA</span>
             </div>
           </div>
-        </div>
+        </Link>
 
-        {/* 3 TABS NAVIGATION */}
+        {/* 4 TABS NAVIGATION */}
         <nav style={{
           display: 'flex',
           background: 'rgba(255, 255, 255, 0.04)',
@@ -80,93 +102,25 @@ export default function Navbar({ activeTab, setActiveTab }) {
           borderRadius: '99px',
           border: '1px solid var(--border)'
         }}>
-          <button
-            onClick={() => setActiveTab('home')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '8px 20px',
-              borderRadius: '99px',
-              border: 'none',
-              fontSize: '0.88rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              background: activeTab === 'home' ? 'var(--gradient-orange-red)' : 'transparent',
-              color: activeTab === 'home' ? '#ffffff' : 'var(--text-secondary)',
-              boxShadow: activeTab === 'home' ? '0 4px 14px var(--orange-glow)' : 'none'
-            }}
-          >
+          <Link to="/" style={getTabStyle('/')}>
             <Activity size={16} />
             <span>Home</span>
-          </button>
+          </Link>
 
-          <button
-            onClick={() => setActiveTab('analysis')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '8px 20px',
-              borderRadius: '99px',
-              border: 'none',
-              fontSize: '0.88rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              background: activeTab === 'analysis' ? 'var(--gradient-orange-red)' : 'transparent',
-              color: activeTab === 'analysis' ? '#ffffff' : 'var(--text-secondary)',
-              boxShadow: activeTab === 'analysis' ? '0 4px 14px var(--orange-glow)' : 'none'
-            }}
-          >
+          <Link to="/analysis" style={getTabStyle('/analysis')}>
             <BarChart3 size={16} />
             <span>AI Analysis</span>
-          </button>
+          </Link>
 
-          <button
-            onClick={() => setActiveTab('past')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '8px 20px',
-              borderRadius: '99px',
-              border: 'none',
-              fontSize: '0.88rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              background: activeTab === 'past' ? 'var(--gradient-orange-red)' : 'transparent',
-              color: activeTab === 'past' ? '#ffffff' : 'var(--text-secondary)',
-              boxShadow: activeTab === 'past' ? '0 4px 14px var(--orange-glow)' : 'none'
-            }}
-          >
+          <Link to="/past-analysis" style={getTabStyle('/past-analysis')}>
             <Clock size={16} />
             <span>Past Analysis</span>
-          </button>
+          </Link>
 
-          <button
-            onClick={() => setActiveTab('insights')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '8px 20px',
-              borderRadius: '99px',
-              border: 'none',
-              fontSize: '0.88rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              background: activeTab === 'insights' ? 'var(--gradient-orange-red)' : 'transparent',
-              color: activeTab === 'insights' ? '#ffffff' : 'var(--text-secondary)',
-              boxShadow: activeTab === 'insights' ? '0 4px 14px var(--orange-glow)' : 'none'
-            }}
-          >
+          <Link to="/insights" style={getTabStyle('/insights')}>
             <Newspaper size={16} />
             <span>Insights</span>
-          </button>
+          </Link>
         </nav>
 
         {/* API STATUS */}
