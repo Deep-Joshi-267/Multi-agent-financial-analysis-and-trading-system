@@ -83,13 +83,13 @@ pip install -r requirement.txt
 
 ## Configuration
 
-Create a `.env` file in the project root:
+After cloning the repository, each developer must create a `.env` file in the project root and add their own Groq API key:
 
 ```env
 GROQ_API_KEY=gsk_your_api_key_here
 ```
 
-Get your Groq API key from: https://console.groq.com/keys
+Get a key from https://console.groq.com/keys. The `.env` file is ignored by Git; do not commit or share it.
 
 ## Usage
 
