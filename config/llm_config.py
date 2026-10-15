@@ -29,13 +29,14 @@ GROQ_MODELS = [
 DEFAULT_MODEL = "qwen/qwen3.8-27b"
 
 
-def get_llm(temperature: float = 0.1, model: Optional[str] = None):
+def get_llm(temperature: float = 0.1, model: Optional[str] = None, max_tokens: int = 800):
     """
     Return a ChatGroq instance with automatic fallback on model errors.
 
     Args:
         temperature: LLM temperature (0.0–1.0)
         model: Override model name. Defaults to DEFAULT_MODEL.
+        max_tokens: Max completion tokens (prevents Groq OTPM rate limit errors)
 
     Returns:
         ChatGroq instance
@@ -43,7 +44,7 @@ def get_llm(temperature: float = 0.1, model: Optional[str] = None):
     from langchain_groq import ChatGroq
 
     chosen = model or os.getenv("GROQ_MODEL", DEFAULT_MODEL)
-    return ChatGroq(model=chosen, temperature=temperature)
+    return ChatGroq(model=chosen, temperature=temperature, max_tokens=max_tokens)
 
 
 def get_llm_with_fallback(temperature: float = 0.1):

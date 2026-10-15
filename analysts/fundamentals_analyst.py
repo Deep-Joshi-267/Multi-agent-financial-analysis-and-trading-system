@@ -12,34 +12,107 @@ from langchain_groq import ChatGroq
 from .state import AnalystState, AnalystReport
 
 
-FUNDAMENTALS_PROMPT = """You are a senior fundamental analyst with expertise in financial statement analysis.
+FUNDAMENTALS_PROMPT = """You are an AI Fundamental Stock Analysis Engine designed for analyzing companies listed in the Indian stock market.
 
-TASK: Analyze the financial data for {ticker} and assess investment potential.
+Your task is to analyze the provided company fundamentals for {ticker} and classify the stock into exactly ONE of these categories:
+* BUY
+* HOLD
+* SELL
 
-FINANCIAL DATA:
+IMPORTANT:
+Do not make the classification based on a single metric. Evaluate all available parameters together.
+
+==================================================
+INPUT DATA FOR {ticker}
+=======================
 {financial_data}
 
-CURRENT PRICE: ${current_price}
+CURRENT PRICE: {current_price}
 
-Evaluate the following:
-1. Revenue growth and profitability trends
-2. Balance sheet strength (debt ratios, liquidity)
-3. Cash flow quality and sustainability
-4. Valuation metrics (P/E, P/B, EV/EBITDA if available)
-5. Competitive positioning and moat
+==================================================
+ANALYSIS FRAMEWORK
+==================
 
-Respond in JSON format:
+Calculate a Fundamental Score out of 100 using the following weights:
+
+1. BUSINESS GROWTH — 25 POINTS
+   - Evaluate: Revenue Growth, Earnings Growth, EPS Growth.
+   - Growth Score = 0–25.
+
+2. PROFITABILITY — 25 POINTS
+   - Evaluate: ROE, ROCE, Operating Margin, Profit Margin.
+   - Profitability Score = 0–25.
+
+3. FINANCIAL HEALTH — 20 POINTS
+   - Evaluate: Debt/Equity, Interest Coverage.
+   - Consider Sector (Banks/NBFCs operate with different leverage).
+   - Financial Health Score = 0–20.
+
+4. VALUATION — 20 POINTS
+   - Evaluate: P/E, P/B, EV/EBITDA relative to growth and profitability.
+   - Valuation Score = 0–20.
+
+5. CASH FLOW — 10 POINTS
+   - Evaluate: Operating Cash Flow, Free Cash Flow.
+   - Cash Flow Score = 0–10.
+
+TOTAL = 100 POINTS
+
+==================================================
+CLASSIFICATION RULE
+===================
+75–100: BUY
+55–74: HOLD
+0–54: SELL
+
+==================================================
+OUTPUT FORMAT
+=============
+Return the result ONLY as valid JSON.
+
+Use exactly this structure:
 {{
-    "signal": "BUY" | "SELL" | "HOLD",
-    "confidence": <float 0.0-1.0>,
-    "reasoning": "<detailed fundamental analysis>",
-    "key_factors": ["<factor1>", "<factor2>", ...]
+"classification": "BUY | HOLD | SELL",
+"fundamental_score": 0,
+"confidence": 0,
+
+"scores": {{
+"growth": 0,
+"profitability": 0,
+"financial_health": 0,
+"valuation": 0,
+"cash_flow": 0
+}},
+
+"analysis": {{
+"growth": "",
+"profitability": "",
+"financial_health": "",
+"valuation": "",
+"cash_flow": ""
+}},
+
+"positive_factors": [
+"",
+"",
+""
+],
+
+"risk_factors": [
+"",
+"",
+""
+],
+
+"key_reason": "",
+
+"data_quality": "HIGH | MEDIUM | LOW"
 }}
 """
 
 
 class FundamentalsAnalyst:
-    """Fundamentals analyst that evaluates company financial health."""
+    """Fundamentals analyst that evaluates company financial health using the 100-point framework."""
 
     def __init__(self, llm: Optional[ChatGroq] = None):
         self.llm = llm or ChatGroq(model="qwen/qwen3.8-27b", temperature=0.1)
@@ -73,13 +146,20 @@ class FundamentalsAnalyst:
                 "current_price": market_data.get("current_price", "N/A"),
             })
 
+            signal = result.get("classification") or result.get("signal") or "HOLD"
+            score = result.get("fundamental_score", 50)
+            reasoning = result.get("key_reason") or str(result.get("analysis", {}))
+            positives = result.get("positive_factors", [])
+            risks = result.get("risk_factors", [])
+
             return {
                 "fundamentals_analysis": {
                     "analyst_type": "fundamentals",
-                    "signal": result.get("signal", "HOLD"),
-                    "confidence": float(result.get("confidence", 0.5)),
-                    "reasoning": result.get("reasoning", ""),
-                    "key_factors": result.get("key_factors", []),
+                    "signal": signal.upper(),
+                    "confidence": float(result.get("confidence", 0.75)),
+                    "reasoning": f"Fundamental Score: {score}/100. {reasoning}",
+                    "key_factors": positives + risks,
+                    "raw_report": result,
                 }
             }
         except Exception as e:
@@ -96,13 +176,8 @@ class FundamentalsAnalyst:
     def _format_financial_data(self, data: dict) -> str:
         """Format financial data dictionary into readable text."""
         lines = []
-        for category, values in data.items():
-            lines.append(f"\n{category.upper()}:")
-            if isinstance(values, dict):
-                for key, val in values.items():
-                    lines.append(f"  - {key}: {val}")
-            else:
-                lines.append(f"  {values}")
+        for k, v in data.items():
+            lines.append(f"  - {k}: {v}")
         return "\n".join(lines)
 
     def __call__(self, state: AnalystState) -> dict:

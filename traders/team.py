@@ -153,8 +153,8 @@ class TraderTeam:
         return self.risk_manager(state)
 
     def _check_iteration_node(self, state: TraderState) -> dict:
-        """Check iteration status - no state change, just for routing."""
-        return {}
+        """Check iteration status."""
+        return {"current_iteration": state.get("current_iteration", 1)}
 
     def _optimize_portfolio_node(self, state: TraderState) -> dict:
         """Execute portfolio optimization."""

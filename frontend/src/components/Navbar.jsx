@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Activity, Flame, Clock, BarChart3, Newspaper } from 'lucide-react';
 
-export default function Navbar() {
+export default function Navbar({ runningState }) {
   const [apiStatus, setApiStatus] = useState({ ok: false, text: 'Checking API...' });
   const location = useLocation();
 
@@ -110,6 +110,16 @@ export default function Navbar() {
           <Link to="/analysis" style={getTabStyle('/analysis')}>
             <BarChart3 size={16} />
             <span>AI Analysis</span>
+            {runningState?.isRunning && (
+              <span style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: '#10b981',
+                boxShadow: '0 0 10px #10b981',
+                animation: 'pulse 1.2s infinite'
+              }} />
+            )}
           </Link>
 
           <Link to="/past-analysis" style={getTabStyle('/past-analysis')}>

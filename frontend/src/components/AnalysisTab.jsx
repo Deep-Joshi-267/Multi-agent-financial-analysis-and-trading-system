@@ -13,17 +13,21 @@ const POPULAR_TICKERS = [
   { symbol: 'NVDA', name: 'NVIDIA Corp.' },
 ];
 
-export default function AnalysisTab({ onAnalysisComplete }) {
+export default function AnalysisTab({ onAnalysisComplete, onRunningStateChange }) {
   const [ticker, setTicker] = useState('RELIANCE.NS');
   const [selectedChartSymbol, setSelectedChartSymbol] = useState('RELIANCE.NS');
   const [capital, setCapital] = useState(100000);
   const [risk, setRisk] = useState('moderate');
-  const [quickMode, setQuickMode] = useState(false); // DEFAULT FALSE FOR FULL 5-STAGE PIPELINE
+  const [quickMode, setQuickMode] = useState(false);
   
   const [quotePreview, setQuotePreview] = useState(null);
   const [suggestions, setSuggestions] = useState([]);
   
   const [isRunning, setIsRunning] = useState(false);
+
+  useEffect(() => {
+    onRunningStateChange?.({ isRunning, ticker });
+  }, [isRunning, ticker, onRunningStateChange]);
   const [logMessages, setLogMessages] = useState([]);
   const [stagesStatus, setStagesStatus] = useState({
     data: 'idle',
@@ -98,10 +102,9 @@ export default function AnalysisTab({ onAnalysisComplete }) {
 
     setStagesStatus({
       data: 'running',
-      analysts: 'idle',
-      researchers: quickMode ? 'skipped' : 'idle',
-      cio: quickMode ? 'skipped' : 'idle',
-      traders: quickMode ? 'skipped' : 'idle'
+      fundamental: 'idle',
+      technical: 'idle',
+      cio: 'idle'
     });
 
     try {
@@ -186,7 +189,7 @@ export default function AnalysisTab({ onAnalysisComplete }) {
           <div>
             <h2 style={{ fontSize: '1.4rem', fontWeight: 800 }}>AI Analysis Studio</h2>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-              Full 5-Agent Pipeline for Indian Stocks (NSE / BSE)
+              Direct 4-Stage AI Pipeline for Indian Stocks (NSE / BSE)
             </p>
           </div>
 
@@ -204,7 +207,7 @@ export default function AnalysisTab({ onAnalysisComplete }) {
         </div>
 
         {/* INPUT FORM ROW */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '20px' }}>
           
           {/* Ticker Input */}
           <div style={{ position: 'relative' }}>
@@ -256,7 +259,7 @@ export default function AnalysisTab({ onAnalysisComplete }) {
                       padding: '10px 14px',
                       cursor: 'pointer',
                       display: 'flex',
-                      justify: 'space-between',
+                      justifyContent: 'space-between',
                       borderBottom: '1px solid rgba(255,255,255,0.04)',
                       fontSize: '0.85rem'
                     }}
@@ -267,55 +270,6 @@ export default function AnalysisTab({ onAnalysisComplete }) {
                 ))}
               </div>
             )}
-          </div>
-
-          {/* Capital Input */}
-          <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
-              Capital (INR / USD)
-            </label>
-            <input
-              type="number"
-              value={capital}
-              onChange={(e) => setCapital(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '12px 14px',
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-md)',
-                color: '#ffffff',
-                fontSize: '0.95rem',
-                fontFamily: 'var(--font-mono)',
-                outline: 'none'
-              }}
-            />
-          </div>
-
-          {/* Risk Selector */}
-          <div>
-            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
-              Risk Tolerance
-            </label>
-            <select
-              value={risk}
-              onChange={(e) => setRisk(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '12px 14px',
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-md)',
-                color: '#ffffff',
-                fontSize: '0.9rem',
-                fontWeight: 600,
-                outline: 'none'
-              }}
-            >
-              <option value="conservative">Conservative</option>
-              <option value="moderate">Moderate</option>
-              <option value="aggressive">Aggressive</option>
-            </select>
           </div>
 
         </div>
@@ -358,46 +312,61 @@ export default function AnalysisTab({ onAnalysisComplete }) {
 
         </div>
 
-        {/* QUICK QUOTE PREVIEW */}
+        {/* COMPREHENSIVE FINANCIAL CARDS PREVIEW */}
         {quotePreview && (
           <div style={{
-            marginTop: '20px',
-            background: 'rgba(255, 87, 34, 0.04)',
+            marginTop: '22px',
+            background: 'rgba(255, 87, 34, 0.03)',
             border: '1px solid rgba(255, 87, 34, 0.2)',
-            borderRadius: 'var(--radius-md)',
-            padding: '16px'
+            borderRadius: 'var(--radius-lg)',
+            padding: '20px'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
               <div>
-                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1.1rem', color: 'var(--orange-primary)' }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 900, fontSize: '1.25rem', color: 'var(--orange-primary)' }}>
                   {quotePreview.symbol}
                 </span>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
-                  {quotePreview.name} · {quotePreview.sector}
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginLeft: '10px', fontWeight: 600 }}>
+                  {quotePreview.name}
                 </span>
               </div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '1.2rem' }}>
-                Rs. {quotePreview.price ? quotePreview.price.toFixed(2) : '—'}
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>CURRENT PRICE</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 900, fontSize: '1.3rem', color: '#ffffff' }}>
+                  Rs. {quotePreview.price ? quotePreview.price.toFixed(2) : '—'}
+                </span>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '8px' }}>
-              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '6px 10px', borderRadius: '4px' }}>
-                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>RSI (14)</div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.85rem' }}>{quotePreview.rsi ? quotePreview.rsi.toFixed(1) : '—'}</div>
-              </div>
-              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '6px 10px', borderRadius: '4px' }}>
-                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>5d Momentum</div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.85rem' }}>{quotePreview.momentum ? `${quotePreview.momentum.toFixed(2)}%` : '—'}</div>
-              </div>
-              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '6px 10px', borderRadius: '4px' }}>
-                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>P/E Ratio</div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.85rem' }}>{quotePreview.pe_ratio ? quotePreview.pe_ratio.toFixed(1) : '—'}</div>
-              </div>
-              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '6px 10px', borderRadius: '4px' }}>
-                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>SMA 20</div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '0.85rem' }}>{quotePreview.sma_20 ? quotePreview.sma_20.toFixed(1) : '—'}</div>
-              </div>
+            {/* FINANCIAL CARDS GRID */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
+              {[
+                { label: 'Sector', val: quotePreview.sector || '—', color: 'var(--text-primary)' },
+                { label: 'Market Cap', val: quotePreview.market_cap || '—', color: 'var(--orange-light)' },
+                { label: 'Revenue Growth', val: quotePreview.revenue_growth || '—', color: (quotePreview.revenue_growth || '').includes('-') ? '#ef4444' : '#10b981' },
+                { label: 'Earnings Growth', val: quotePreview.earnings_growth || '—', color: (quotePreview.earnings_growth || '').includes('-') ? '#ef4444' : '#10b981' },
+                { label: 'EPS Growth', val: quotePreview.eps_growth || '—', color: (quotePreview.eps_growth || '').includes('-') ? '#ef4444' : '#10b981' },
+                { label: 'ROE', val: quotePreview.roe || '—', color: '#10b981' },
+                { label: 'ROCE', val: quotePreview.roce || '—', color: '#10b981' },
+                { label: 'Operating Margin', val: quotePreview.operating_margin || '—', color: 'var(--text-primary)' },
+                { label: 'Profit Margin', val: quotePreview.profit_margin || '—', color: 'var(--text-primary)' },
+                { label: 'Debt / Equity', val: quotePreview.debt_to_equity || '—', color: 'var(--text-secondary)' },
+                { label: 'Interest Coverage', val: quotePreview.interest_coverage || '—', color: 'var(--text-secondary)' },
+                { label: 'P/E Ratio', val: quotePreview.pe_ratio || '—', color: 'var(--text-primary)' },
+                { label: 'P/B Ratio', val: quotePreview.price_to_book || '—', color: 'var(--text-primary)' },
+                { label: 'EV / EBITDA', val: quotePreview.ev_ebitda || '—', color: 'var(--text-primary)' },
+                { label: 'Operating Cash Flow', val: quotePreview.operating_cashflow || '—', color: 'var(--text-primary)' },
+                { label: 'Free Cash Flow', val: quotePreview.free_cashflow || '—', color: 'var(--text-primary)' },
+              ].map((card, idx) => (
+                <div key={idx} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px' }}>
+                  <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '3px' }}>
+                    {card.label}
+                  </div>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: '0.88rem', color: card.color }}>
+                    {card.val}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -414,7 +383,7 @@ export default function AnalysisTab({ onAnalysisComplete }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Terminal size={18} color="var(--orange-primary)" />
-              <h3 style={{ fontSize: '1rem', fontWeight: 800 }}>Pipeline Execution Stream (5-Stage Architecture)</h3>
+              <h3 style={{ fontSize: '1rem', fontWeight: 800 }}>Pipeline Execution Stream (4-Stage Architecture)</h3>
             </div>
             {isRunning && (
               <span style={{ fontSize: '0.78rem', color: 'var(--green)', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -424,14 +393,13 @@ export default function AnalysisTab({ onAnalysisComplete }) {
             )}
           </div>
 
-          {/* STAGES TRACK - ALL 5 STAGES VISIBLE & TRACKED */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px', marginBottom: '16px' }}>
+          {/* STAGES TRACK - NEW DIRECT PIPELINE ARCHITECTURE */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '16px' }}>
             {[
               { id: 'data', label: 'Data Ingestion' },
-              { id: 'analysts', label: 'Analyst Team' },
-              { id: 'researchers', label: 'Researchers' },
-              { id: 'cio', label: 'CIO Decision' },
-              { id: 'traders', label: 'Trader Execution' }
+              { id: 'fundamental', label: 'Fundamental Analysis' },
+              { id: 'technical', label: 'Technical Analysis' },
+              { id: 'cio', label: 'CIO Decision' }
             ].map((st) => {
               const stVal = stagesStatus[st.id] || 'idle';
               const isDone = stVal === 'done';
@@ -546,6 +514,38 @@ export default function AnalysisTab({ onAnalysisComplete }) {
                         {an.reason.slice(0, 160)}…
                       </p>
                     )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 6 CIO DETAILED DECISION CARDS */}
+          {finalResult.cio_cards && Object.keys(finalResult.cio_cards).length > 0 && (
+            <div style={{ marginBottom: '24px' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '16px', color: 'var(--orange-light)' }}>
+                CIO Directive & 6 Detailed Analytical Cards
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
+                {Object.entries(finalResult.cio_cards).map(([key, card], idx) => (
+                  <div key={idx} className="glass-card" style={{ padding: '18px', border: '1px solid var(--border-hover)', background: 'rgba(255,255,255,0.02)' }}>
+                    <h4 style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--orange-primary)', marginBottom: '10px' }}>
+                      {card.title || `Card ${idx + 1}`}
+                    </h4>
+                    <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                      {Object.entries(card)
+                        .filter(([k]) => k !== 'title')
+                        .map(([k, v], i) => (
+                          <div key={i} style={{ marginBottom: '6px' }}>
+                            <strong style={{ color: 'var(--text-muted)', textTransform: 'capitalize' }}>
+                              {k.replace(/_/g, ' ')}:
+                            </strong>{' '}
+                            <span style={{ color: '#ffffff', fontWeight: 600 }}>
+                              {Array.isArray(v) ? v.join(', ') : String(v)}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
                   </div>
                 ))}
               </div>
