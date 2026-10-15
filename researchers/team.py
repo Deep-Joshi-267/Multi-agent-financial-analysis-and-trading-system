@@ -23,7 +23,7 @@ class ResearcherTeam:
         llm: Optional[ChatGroq] = None,
         max_debate_rounds: int = 2,
     ):
-        self.llm = llm or ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2)
+        self.llm = llm or ChatGroq(model="qwen/qwen3.8-27b", temperature=0.2)
         self.max_rounds = max_debate_rounds
 
         # Initialize researcher agents
@@ -40,20 +40,17 @@ class ResearcherTeam:
         workflow = StateGraph(ResearcherState)
 
         # Add nodes
-        workflow.add_node("bullish_analysis", self._bullish_node)
-        workflow.add_node("bearish_analysis", self._bearish_node)
+        workflow.add_node("bull_node",      self._bullish_node)
+        workflow.add_node("bear_node",      self._bearish_node)
         workflow.add_node("evaluate_round", self._evaluate_node)
         workflow.add_node("increment_round", self._increment_round)
-        workflow.add_node("synthesize", self._synthesize_node)
+        workflow.add_node("synthesize",     self._synthesize_node)
 
-        # Set entry point
-        workflow.set_entry_point("bullish_analysis")
+        workflow.set_entry_point("bull_node")
 
-        # Define edges
-        workflow.add_edge("bullish_analysis", "bearish_analysis")
-        workflow.add_edge("bearish_analysis", "evaluate_round")
-        
-        # Conditional edge: continue debate or synthesize
+        workflow.add_edge("bull_node",      "bear_node")
+        workflow.add_edge("bear_node",      "evaluate_round")
+
         workflow.add_conditional_edges(
             "evaluate_round",
             self._should_continue_debate,
@@ -62,8 +59,8 @@ class ResearcherTeam:
                 "conclude": "synthesize",
             }
         )
-        
-        workflow.add_edge("increment_round", "bullish_analysis")
+
+        workflow.add_edge("increment_round", "bull_node")
         workflow.add_edge("synthesize", END)
 
         return workflow.compile()
@@ -129,6 +126,8 @@ class ResearcherTeam:
             "bullish_analysis": None,
             "bearish_analysis": None,
             "debate_rounds": [],
+            "should_continue": False,
+            "round_evaluation": None,
             "research_report": None,
             "consensus_reached": False,
             "messages": [],
@@ -154,6 +153,8 @@ class ResearcherTeam:
             "bullish_analysis": None,
             "bearish_analysis": None,
             "debate_rounds": [],
+            "should_continue": False,
+            "round_evaluation": None,
             "research_report": None,
             "consensus_reached": False,
             "messages": [],

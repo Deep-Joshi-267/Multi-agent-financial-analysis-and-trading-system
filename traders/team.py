@@ -56,7 +56,7 @@ class TraderTeam:
             auto_approve_threshold: Score threshold for auto-approval
             approval_callback: Optional callback for approval (default: CLI prompt)
         """
-        self.llm = llm or ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2)
+        self.llm = llm or ChatGroq(model="qwen/qwen3.8-27b", temperature=0.2)
         self.max_iterations = max_iterations
         self.score_threshold = score_threshold
         self.require_human_approval = require_human_approval
@@ -153,8 +153,8 @@ class TraderTeam:
         return self.risk_manager(state)
 
     def _check_iteration_node(self, state: TraderState) -> dict:
-        """Check iteration status - no state change, just for routing."""
-        return {}
+        """Check iteration status."""
+        return {"current_iteration": state.get("current_iteration", 1)}
 
     def _optimize_portfolio_node(self, state: TraderState) -> dict:
         """Execute portfolio optimization."""

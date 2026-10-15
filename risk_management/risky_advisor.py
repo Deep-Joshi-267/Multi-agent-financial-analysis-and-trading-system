@@ -93,7 +93,7 @@ class RiskyAdvisor:
     """Aggressive risk advisor advocating for high-reward strategies."""
 
     def __init__(self, llm: Optional[ChatGroq] = None):
-        self.llm = llm or ChatGroq(model="llama-3.3-70b-versatile", temperature=0.3)
+        self.llm = llm or ChatGroq(model="qwen/qwen3.8-27b", temperature=0.3)
         self.prompt = ChatPromptTemplate.from_template(RISKY_ADVISOR_PROMPT)
         self.parser = JsonOutputParser()
 

@@ -43,7 +43,7 @@ class RiskManagementTeam:
         Args:
             llm: Language model for agents
         """
-        self.llm = llm or ChatGroq(model="llama-3.3-70b-versatile", temperature=0.1)
+        self.llm = llm or ChatGroq(model="qwen/qwen3.8-27b", temperature=0.1)
 
         # Initialize advisors
         self.risky_advisor = RiskyAdvisor(llm=self.llm)
@@ -60,19 +60,18 @@ class RiskManagementTeam:
         workflow = StateGraph(RiskManagementState)
 
         # Add nodes for each advisor and manager
-        workflow.add_node("risky_assessment", self._risky_node)
-        workflow.add_node("neutral_assessment", self._neutral_node)
-        workflow.add_node("safe_assessment", self._safe_node)
+        workflow.add_node("risky_node", self._risky_node)
+        workflow.add_node("neutral_node", self._neutral_node)
+        workflow.add_node("safe_node", self._safe_node)
         workflow.add_node("synthesize", self._synthesize_node)
 
         # Set entry point - all advisors run in sequence
-        # (LangGraph will handle them, could be parallelized in production)
-        workflow.set_entry_point("risky_assessment")
+        workflow.set_entry_point("risky_node")
 
         # Sequential flow through advisors
-        workflow.add_edge("risky_assessment", "neutral_assessment")
-        workflow.add_edge("neutral_assessment", "safe_assessment")
-        workflow.add_edge("safe_assessment", "synthesize")
+        workflow.add_edge("risky_node", "neutral_node")
+        workflow.add_edge("neutral_node", "safe_node")
+        workflow.add_edge("safe_node", "synthesize")
         workflow.add_edge("synthesize", END)
 
         return workflow.compile()

@@ -12,31 +12,104 @@ from langchain_groq import ChatGroq
 from .state import AnalystState, AnalystReport
 
 
-TECHNICAL_PROMPT = """You are a technical analysis expert specializing in price action and indicators.
+TECHNICAL_PROMPT = """You are an AI Technical Stock Analysis Engine designed for analyzing stocks listed in the Indian stock market using technical indicators and price action parameters.
 
-TASK: Perform technical analysis for {ticker}.
+Your task is to analyze the provided technical indicator parameters for {ticker} and classify the stock into exactly ONE of these categories:
+* BUY
+* HOLD
+* SELL
 
-PRICE DATA:
-- Current Price: ${current_price}
-- Price History (recent): {price_history}
-- Volume History (recent): {volume_history}
+IMPORTANT:
+Do not make the classification based on a single metric. Evaluate all available technical parameters together.
 
-CALCULATED INDICATORS:
+==================================================
+INPUT DATA FOR {ticker}
+=======================
+Current Price: {current_price}
+Calculated Indicators & Signals:
 {indicators}
 
-Analyze:
-1. Trend direction (uptrend, downtrend, sideways)
-2. Support and resistance levels
-3. Momentum signals from indicators
-4. Volume confirmation
-5. Pattern recognition (if any)
+Recent Price History: {price_history}
+Recent Volume History: {volume_history}
 
-Respond in JSON format:
+==================================================
+ANALYSIS FRAMEWORK
+==================
+
+Calculate a Technical Score out of 100 using the following weights:
+
+1. TREND & PRICE ACTION — 30 POINTS
+   - Evaluate Price trend direction, 5d/20d momentum, 52-week high/low proximity.
+   - Score = 0–30.
+
+2. MOMENTUM INDICATORS — 25 POINTS
+   - Evaluate RSI (14), MACD vs MACD Signal Line crossover.
+   - Overbought RSI (>70) or oversold RSI (<30), bullish/bearish MACD divergence.
+   - Score = 0–25.
+
+3. MOVING AVERAGES — 20 POINTS
+   - Evaluate SMA 20, SMA 50, SMA 200 alignment and price relative to moving averages (Golden cross vs Death cross).
+   - Score = 0–20.
+
+4. VOLUME & LIQUIDITY — 15 POINTS
+   - Evaluate recent volume vs 5-day average volume, volume confirmation on price moves.
+   - Score = 0–15.
+
+5. VOLATILITY & BANDS — 10 POINTS
+   - Evaluate Bollinger Bands (Upper/Lower band squeeze or breakout) and volatility levels.
+   - Score = 0–10.
+
+TOTAL = 100 POINTS
+
+==================================================
+CLASSIFICATION RULE
+===================
+75–100: BUY
+55–74: HOLD
+0–54: SELL
+
+==================================================
+OUTPUT FORMAT
+=============
+Return the result ONLY as valid JSON.
+
+Use exactly this structure:
 {{
-    "signal": "BUY" | "SELL" | "HOLD",
-    "confidence": <float 0.0-1.0>,
-    "reasoning": "<technical analysis with specific levels and patterns>",
-    "key_factors": ["<factor1>", "<factor2>", ...]
+"classification": "BUY | HOLD | SELL",
+"technical_score": 0,
+"confidence": 0,
+
+"scores": {{
+"trend": 0,
+"momentum": 0,
+"moving_averages": 0,
+"volume": 0,
+"volatility": 0
+}},
+
+"analysis": {{
+"trend": "",
+"momentum": "",
+"moving_averages": "",
+"volume": "",
+"volatility": ""
+}},
+
+"positive_factors": [
+"",
+"",
+""
+],
+
+"risk_factors": [
+"",
+"",
+""
+],
+
+"key_reason": "",
+
+"data_quality": "HIGH | MEDIUM | LOW"
 }}
 """
 
@@ -45,7 +118,7 @@ class TechnicalAnalyst:
     """Technical analyst using price action and indicators."""
 
     def __init__(self, llm: Optional[ChatGroq] = None):
-        self.llm = llm or ChatGroq(model="llama-3.3-70b-versatile", temperature=0.1)
+        self.llm = llm or ChatGroq(model="qwen/qwen3.8-27b", temperature=0.1)
         self.prompt = ChatPromptTemplate.from_template(TECHNICAL_PROMPT)
         self.parser = JsonOutputParser()
 
@@ -70,13 +143,20 @@ class TechnicalAnalyst:
                 "indicators": indicators,
             })
 
+            signal = result.get("classification") or result.get("signal") or "HOLD"
+            score = result.get("technical_score", 50)
+            reasoning = result.get("key_reason") or str(result.get("analysis", {}))
+            positives = result.get("positive_factors", [])
+            risks = result.get("risk_factors", [])
+
             return {
                 "technical_analysis": {
                     "analyst_type": "technical",
-                    "signal": result.get("signal", "HOLD"),
-                    "confidence": float(result.get("confidence", 0.5)),
-                    "reasoning": result.get("reasoning", ""),
-                    "key_factors": result.get("key_factors", []),
+                    "signal": signal.upper(),
+                    "confidence": float(result.get("confidence", 0.75)),
+                    "reasoning": f"Technical Score: {score}/100. {reasoning}",
+                    "key_factors": positives + risks,
+                    "raw_report": result,
                 }
             }
         except Exception as e:

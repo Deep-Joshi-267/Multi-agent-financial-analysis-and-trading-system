@@ -1,99 +1,134 @@
-"""News-Driven Analyst Agent.
+"""News Analyst Agent — Indian Stock Market (NSE/BSE).
 
-Analyzes stock news and macroeconomic updates to predict price movements.
-Based on approaches from Lopez-Lira & Tang (2023) and FinGPT methodologies.
+Analyzes Google News headlines to determine short-term price impact.
+Gives DECISIVE BUY/SELL/HOLD signals.
 """
 
+import time
 from typing import Optional
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_groq import ChatGroq
 
-from .state import AnalystState, AnalystReport
+from .state import AnalystState
 
 
-NEWS_ANALYST_PROMPT = """You are a senior financial news analyst specializing in market-moving events.
+NEWS_ANALYST_PROMPT = """You are a senior financial news analyst for the Indian stock market (NSE/BSE).
 
-TASK: Analyze the following news articles for {ticker} and determine their impact on stock price.
+TASK: Analyze the following recent news for {ticker} and give a DECISIVE trading signal.
 
 NEWS ARTICLES:
 {news_articles}
 
-CURRENT PRICE: ${current_price}
+CURRENT PRICE: Rs. {current_price}
 
-Analyze each news item for:
-1. Relevance to the company's core business
-2. Short-term vs long-term implications
-3. Market sentiment shift potential
-4. Comparison with sector/market trends
+Analysis criteria:
+1. Corporate earnings, revenue, profit/loss announcements
+2. Management guidance, promoter activity, bulk/block deals
+3. Regulatory actions (SEBI, RBI, government policy impacts)
+4. Sector tailwinds or headwinds (Budget, GST, interest rates)
+5. Global cues affecting Indian markets (FII/DII flows, crude oil, USD/INR)
 
-Respond in JSON format:
+IMPORTANT RULES:
+- You MUST give a clear BUY or SELL unless truly neutral/no news
+- Positive earnings/guidance/deal wins/expansion -> BUY
+- Profit warnings/regulatory trouble/high debt/fraud -> SELL
+- Mixed signals or no material news -> HOLD
+- Be specific in reasoning, reference the news headlines
+
+Respond ONLY in valid JSON (no extra text, no markdown):
 {{
     "signal": "BUY" | "SELL" | "HOLD",
     "confidence": <float 0.0-1.0>,
-    "reasoning": "<detailed analysis>",
-    "key_factors": ["<factor1>", "<factor2>", ...]
+    "reasoning": "<2-3 sentences citing specific news>",
+    "key_factors": ["<factor1>", "<factor2>", "<factor3>"]
+}}
+"""
+
+NO_NEWS_PROMPT = """You are a senior financial analyst for Indian markets (NSE/BSE).
+
+No recent news articles are available for {ticker} (Price: Rs. {current_price}).
+
+Based on the absence of news and general market context, provide a neutral assessment.
+
+Respond ONLY in valid JSON:
+{{
+    "signal": "HOLD",
+    "confidence": 0.4,
+    "reasoning": "No recent news available for {ticker}. Maintaining neutral stance pending news catalysts.",
+    "key_factors": ["No recent news", "Insufficient information", "Await catalyst"]
 }}
 """
 
 
 class NewsAnalyst:
-    """News-driven analyst agent that processes market news for trading signals."""
+    """News-driven analyst agent for Indian stock market."""
 
     def __init__(self, llm: Optional[ChatGroq] = None):
-        self.llm = llm or ChatGroq(model="llama-3.3-70b-versatile", temperature=0.1)
-        self.prompt = ChatPromptTemplate.from_template(NEWS_ANALYST_PROMPT)
+        self.llm    = llm or ChatGroq(model="qwen/qwen3.8-27b", temperature=0.1)
         self.parser = JsonOutputParser()
 
+    def _invoke_with_retry(self, chain, inputs: dict, retries: int = 3) -> dict:
+        """Invoke LLM chain with exponential backoff retry."""
+        for attempt in range(retries):
+            try:
+                return chain.invoke(inputs)
+            except Exception as e:
+                if attempt == retries - 1:
+                    raise
+                wait = 2 ** attempt
+                time.sleep(wait)
+
     def analyze(self, state: AnalystState) -> dict:
-        """Analyze news and return updated state with news analysis."""
-        market_data = state.get("market_data", {})
+        """Analyze news and return updated state with news signal."""
+        market_data   = state.get("market_data", {})
         news_articles = market_data.get("news_articles", [])
-
-        if not news_articles:
-            return {
-                "news_analysis": {
-                    "analyst_type": "news",
-                    "signal": "HOLD",
-                    "confidence": 0.0,
-                    "reasoning": "No news articles available for analysis.",
-                    "key_factors": [],
-                }
-            }
-
-        news_text = "\n\n".join(
-            [f"[{i+1}] {article}" for i, article in enumerate(news_articles)]
-        )
-
-        chain = self.prompt | self.llm | self.parser
+        ticker        = state.get("ticker", "")
+        price         = market_data.get("current_price", "N/A")
 
         try:
-            result = chain.invoke({
-                "ticker": state["ticker"],
-                "news_articles": news_text,
-                "current_price": market_data.get("current_price", "N/A"),
-            })
+            if not news_articles:
+                # No news — use simplified prompt
+                prompt = ChatPromptTemplate.from_template(NO_NEWS_PROMPT)
+                chain  = prompt | self.llm | self.parser
+                result = self._invoke_with_retry(chain, {
+                    "ticker": ticker,
+                    "current_price": price,
+                })
+            else:
+                news_text = "\n\n".join(
+                    f"[{i+1}] {article}" for i, article in enumerate(news_articles)
+                )
+                prompt = ChatPromptTemplate.from_template(NEWS_ANALYST_PROMPT)
+                chain  = prompt | self.llm | self.parser
+                result = self._invoke_with_retry(chain, {
+                    "ticker":        ticker,
+                    "news_articles": news_text,
+                    "current_price": price,
+                })
 
             return {
                 "news_analysis": {
                     "analyst_type": "news",
-                    "signal": result.get("signal", "HOLD"),
-                    "confidence": float(result.get("confidence", 0.5)),
-                    "reasoning": result.get("reasoning", ""),
-                    "key_factors": result.get("key_factors", []),
+                    "signal":       result.get("signal", "HOLD"),
+                    "confidence":   float(result.get("confidence", 0.5)),
+                    "reasoning":    result.get("reasoning", ""),
+                    "key_factors":  result.get("key_factors", []),
+                    "news_count":   len(news_articles),
                 }
             }
+
         except Exception as e:
             return {
                 "news_analysis": {
                     "analyst_type": "news",
-                    "signal": "HOLD",
-                    "confidence": 0.0,
-                    "reasoning": f"Analysis failed: {str(e)}",
-                    "key_factors": [],
+                    "signal":       "HOLD",
+                    "confidence":   0.0,
+                    "reasoning":    f"News analysis failed: {str(e)}",
+                    "key_factors":  [],
+                    "news_count":   len(news_articles),
                 }
             }
 
     def __call__(self, state: AnalystState) -> dict:
-        """Make the analyst callable for LangGraph nodes."""
         return self.analyze(state)

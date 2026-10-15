@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TradingAgents — Multi-Agent Financial Analysis</title>
+  <meta name="description" content="AI-powered multi-agent financial analysis and trading system using LangGraph and Groq LLM." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ── HEADER ─────────────────────────────────────────────────── -->
+<header class="header">
+  <div class="header-inner">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <path d="M4 20 L10 12 L16 16 L22 6" stroke="url(#grad1)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="22" cy="6" r="3" fill="url(#grad1)"/>
+          <defs>
+            <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#00d4ff"/>
+              <stop offset="100%" stop-color="#7c3aed"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <span class="logo-text">TradingAgents</span>
+      <span class="logo-badge">AI</span>
+    </div>
+    <nav class="nav-pills">
+      <span class="nav-pill active" id="nav-analyze" onclick="showSection('analyze')">Analyze</span>
+      <span class="nav-pill" id="nav-pipeline" onclick="showSection('pipeline')">Pipeline</span>
+      <span class="nav-pill" id="nav-about" onclick="showSection('about')">About</span>
+    </nav>
+    <div class="header-status" id="apiStatus">
+      <span class="status-dot"></span>
+      <span class="status-text">Checking…</span>
+    </div>
+  </div>
+</header>
+
+<!-- ── HERO ───────────────────────────────────────────────────── -->
+<section class="hero" id="section-analyze">
+  <div class="hero-bg">
+    <div class="hero-orb orb1"></div>
+    <div class="hero-orb orb2"></div>
+    <div class="hero-orb orb3"></div>
+  </div>
+  <div class="container">
+    <div class="hero-content">
+      <div class="hero-badge">
+        <span class="badge-dot"></span>
+        Powered by LangGraph + Groq LLM
+      </div>
+      <h1 class="hero-title">
+        Multi-Agent<br/>
+        <span class="gradient-text">Financial Intelligence</span>
+      </h1>
+      <p class="hero-subtitle">
+        5 specialised AI agents collaborate — from live data ingestion to risk-managed trade decisions — in one seamless pipeline.
+      </p>
+
+      <!-- ── ANALYSIS CARD ──────────────────────────────────── -->
+      <div class="card analysis-card" id="analysisForm">
+        <div class="card-header">
+          <h2 class="card-title">Run Analysis</h2>
+          <div class="mode-toggle">
+            <label class="toggle-label">
+              <input type="checkbox" id="quickMode" />
+              <span class="toggle-track">
+                <span class="toggle-thumb"></span>
+              </span>
+              <span class="toggle-text">Quick mode</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group ticker-group">
+            <label class="form-label" for="tickerInput">Ticker Symbol</label>
+            <div class="ticker-input-wrap">
+              <input
+                type="text"
+                id="tickerInput"
+                class="form-input ticker-input"
+                placeholder="AAPL, MSFT, RELIANCE.NS…"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <div class="ticker-suggestions" id="tickerSuggestions"></div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="capitalInput">Capital (USD)</label>
+            <input
+              type="number"
+              id="capitalInput"
+              class="form-input"
+              value="100000"
+              min="1000"
+              step="1000"
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="riskSelect">Risk Tolerance</label>
+            <select id="riskSelect" class="form-select">
+              <option value="conservative">Conservative</option>
+              <option value="moderate" selected>Moderate</option>
+              <option value="aggressive">Aggressive</option>
+            </select>
+          </div>
+        </div>
+
+        <button class="btn btn-primary analyze-btn" id="analyzeBtn" onclick="startAnalysis()">
+          <span class="btn-icon">⚡</span>
+          <span class="btn-text">Analyse Stock</span>
+        </button>
+      </div>
+
+      <!-- ── POPULAR TICKERS ────────────────────────────────── -->
+      <div class="popular-tickers">
+        <span class="popular-label">Popular:</span>
+        <div class="ticker-chips">
+          <span class="chip" onclick="setTicker('RELIANCE.NS')">RELIANCE</span>
+          <span class="chip" onclick="setTicker('TCS.NS')">TCS</span>
+          <span class="chip" onclick="setTicker('INFY.NS')">INFY</span>
+          <span class="chip" onclick="setTicker('HDFCBANK.NS')">HDFC BANK</span>
+          <span class="chip" onclick="setTicker('TATAMOTORS.NS')">TATA MOTORS</span>
+          <span class="chip" onclick="setTicker('AAPL')">AAPL</span>
+          <span class="chip" onclick="setTicker('MSFT')">MSFT</span>
+          <span class="chip" onclick="setTicker('NVDA')">NVDA</span>
+        </div>
+      </div>
+
+      <!-- ── LIVE PRICE CHART CARD ───────────────────────────── -->
+      <div class="card chart-card" id="stockChartCard" style="display:none; margin-top:2rem;">
+        <div class="chart-header">
+          <div class="chart-title-wrap">
+            <div class="chart-symbol" id="chartSymbol">RELIANCE.NS</div>
+            <div class="chart-name" id="chartName">Live Price Chart</div>
+          </div>
+          <div class="chart-price-wrap">
+            <span class="chart-current-price" id="chartCurrentPrice">Rs. 0.00</span>
+            <span class="chart-change badge" id="chartChangeBadge">+0.00 (0.00%)</span>
+          </div>
+        </div>
+
+        <div class="chart-meta-bar">
+          <div class="chart-stat-item">
+            <span class="stat-label">High</span>
+            <span class="stat-value" id="chartHigh">Rs. 0.00</span>
+          </div>
+          <div class="chart-stat-item">
+            <span class="stat-label">Low</span>
+            <span class="stat-value" id="chartLow">Rs. 0.00</span>
+          </div>
+
+          <!-- Timeframe Controls -->
+          <div class="timeframe-selector" id="timeframeSelector">
+            <button class="tf-btn" data-period="1d" onclick="changeChartPeriod('1d')">1D</button>
+            <button class="tf-btn active" data-period="1m" onclick="changeChartPeriod('1m')">1M</button>
+            <button class="tf-btn" data-period="6m" onclick="changeChartPeriod('6m')">6M</button>
+            <button class="tf-btn" data-period="ytd" onclick="changeChartPeriod('ytd')">YTD</button>
+            <button class="tf-btn" data-period="5y" onclick="changeChartPeriod('5y')">5Y</button>
+          </div>
+        </div>
+
+        <div class="chart-canvas-container">
+          <canvas id="priceChartCanvas"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── LIVE PIPELINE SECTION ─────────────────────────────────── -->
+<section class="pipeline-section" id="pipelineSection" style="display:none">
+  <div class="container">
+
+    <!-- Ticker Header -->
+    <div class="analysis-header">
+      <div class="analysis-ticker-badge" id="analysisTicker"></div>
+      <div class="analysis-meta" id="analysisMeta"></div>
+      <button class="btn btn-ghost" onclick="resetAnalysis()">← New Analysis</button>
+    </div>
+
+    <!-- Stage Progress -->
+    <div class="stages-track">
+      <div class="stage-card" id="stage-data">
+        <div class="stage-icon">📡</div>
+        <div class="stage-info">
+          <div class="stage-name">Data Fetch</div>
+          <div class="stage-desc">Live market data</div>
+        </div>
+        <div class="stage-status-dot idle"></div>
+      </div>
+      <div class="stage-arrow">→</div>
+      <div class="stage-card" id="stage-analysts">
+        <div class="stage-icon">🔬</div>
+        <div class="stage-info">
+          <div class="stage-name">Analyst Team</div>
+          <div class="stage-desc">4 analysts</div>
+        </div>
+        <div class="stage-status-dot idle"></div>
+      </div>
+      <div class="stage-arrow">→</div>
+      <div class="stage-card" id="stage-researchers" id="stage-researchers">
+        <div class="stage-icon">⚖️</div>
+        <div class="stage-info">
+          <div class="stage-name">Researchers</div>
+          <div class="stage-desc">Bull vs Bear</div>
+        </div>
+        <div class="stage-status-dot idle"></div>
+      </div>
+      <div class="stage-arrow">→</div>
+      <div class="stage-card" id="stage-cio">
+        <div class="stage-icon">🏛️</div>
+        <div class="stage-info">
+          <div class="stage-name">CIO Decision</div>
+          <div class="stage-desc">Final thesis</div>
+        </div>
+        <div class="stage-status-dot idle"></div>
+      </div>
+      <div class="stage-arrow">→</div>
+      <div class="stage-card" id="stage-traders">
+        <div class="stage-icon">💹</div>
+        <div class="stage-info">
+          <div class="stage-name">Trader Team</div>
+          <div class="stage-desc">Execution plan</div>
+        </div>
+        <div class="stage-status-dot idle"></div>
+      </div>
+    </div>
+
+    <!-- Live Log -->
+    <div class="log-panel">
+      <div class="log-header">
+        <span class="log-title">Live Pipeline Log</span>
+        <div class="log-pulse" id="logPulse"></div>
+      </div>
+      <div class="log-body" id="logBody"></div>
+    </div>
+
+    <!-- Results -->
+    <div class="results-section" id="resultsSection" style="display:none">
+      <div class="results-grid">
+
+        <!-- Decision Card -->
+        <div class="card result-card decision-card" id="decisionCard" style="grid-column:1/-1">
+          <div class="result-label">Trading Decision</div>
+          <div class="decision-action" id="decisionAction">—</div>
+          <div class="decision-meta" id="decisionMeta"></div>
+          <div class="confidence-bar-wrap">
+            <div class="confidence-label">
+              Confidence <span id="confidenceText">—</span>
+            </div>
+            <div class="confidence-bar">
+              <div class="confidence-fill" id="confidenceFill"></div>
+            </div>
+          </div>
+          <div class="decision-reasoning" id="decisionReasoning"></div>
+        </div>
+
+        <!-- Market Data Card -->
+        <div class="card result-card" id="marketDataCard" style="display:none;grid-column:1/-1">
+          <div class="result-label">Live Market Data — Yahoo Finance</div>
+          <div id="marketDataContent"></div>
+        </div>
+
+        <!-- Analyst Breakdown -->
+        <div class="card result-card" id="analystCard" style="grid-column:1/-1">
+          <div class="result-label">Analyst Team Breakdown</div>
+          <div class="analyst-signals" id="analystSignals"></div>
+        </div>
+
+        <!-- Research Card -->
+        <div class="card result-card research-card" id="researchCard" style="display:none;grid-column:1/-1">
+          <div class="result-label">Research Synthesis — Bull vs Bear Debate</div>
+          <div class="research-content" id="researchContent"></div>
+        </div>
+
+        <!-- Trade Execution Card -->
+        <div class="card result-card trade-card" id="tradeCard" style="display:none">
+          <div class="result-label">Trade Execution Plan</div>
+          <div class="trade-content" id="tradeContent"></div>
+        </div>
+
+        <!-- Risk Factors Card -->
+        <div class="card result-card" id="riskCard" style="display:none">
+          <div class="result-label">Risk Factors</div>
+          <div class="risk-factors" id="riskContent"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── PIPELINE DIAGRAM ─────────────────────────────────────── -->
+<section class="pipeline-diagram-section" id="section-pipeline" style="display:none">
+  <div class="container">
+    <h2 class="section-title gradient-text">5-Stage Pipeline Architecture</h2>
+    <p class="section-subtitle">Each stage is powered by specialised AI agents orchestrated via LangGraph</p>
+    <div class="pipeline-diagram">
+      <div class="pipeline-stage-box">
+        <div class="psb-icon">📡</div>
+        <div class="psb-number">Stage 1</div>
+        <div class="psb-title">Data Fetch</div>
+        <div class="psb-agents">
+          <span class="agent-tag">News Scraper</span>
+          <span class="agent-tag">Stock Data</span>
+          <span class="agent-tag">yFinance</span>
+        </div>
+      </div>
+      <div class="pipeline-arrow">▶</div>
+      <div class="pipeline-stage-box">
+        <div class="psb-icon">🔬</div>
+        <div class="psb-number">Stage 2</div>
+        <div class="psb-title">Analyst Team</div>
+        <div class="psb-agents">
+          <span class="agent-tag">News</span>
+          <span class="agent-tag">Fundamentals</span>
+          <span class="agent-tag">Sentiment</span>
+          <span class="agent-tag">Technical</span>
+        </div>
+      </div>
+      <div class="pipeline-arrow">▶</div>
+      <div class="pipeline-stage-box">
+        <div class="psb-icon">⚖️</div>
+        <div class="psb-number">Stage 3</div>
+        <div class="psb-title">Researchers</div>
+        <div class="psb-agents">
+          <span class="agent-tag bull">Bull 🐂</span>
+          <span class="agent-tag bear">Bear 🐻</span>
+          <span class="agent-tag">2-round debate</span>
+        </div>
+      </div>
+      <div class="pipeline-arrow">▶</div>
+      <div class="pipeline-stage-box">
+        <div class="psb-icon">🏛️</div>
+        <div class="psb-number">Stage 4</div>
+        <div class="psb-title">CIO Decision</div>
+        <div class="psb-agents">
+          <span class="agent-tag">Chief Investment Officer</span>
+        </div>
+      </div>
+      <div class="pipeline-arrow">▶</div>
+      <div class="pipeline-stage-box">
+        <div class="psb-icon">💹</div>
+        <div class="psb-number">Stage 5</div>
+        <div class="psb-title">Trader Team</div>
+        <div class="psb-agents">
+          <span class="agent-tag">Trader</span>
+          <span class="agent-tag">Risk Mgr</span>
+          <span class="agent-tag">Portfolio Mgr</span>
+          <span class="agent-tag">Executor</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🔄</div>
+        <div class="feature-title">Feedback-Driven</div>
+        <div class="feature-desc">Trader ↔ Risk Manager feedback loop (up to 3 iterations)</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🛡️</div>
+        <div class="feature-title">Risk Managed</div>
+        <div class="feature-desc">Every decision scored on Risk, Reward, Timing, and Alignment</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⚡</div>
+        <div class="feature-title">Real-Time Data</div>
+        <div class="feature-desc">Live news and stock data integration via yFinance</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🤖</div>
+        <div class="feature-title">Groq LLM</div>
+        <div class="feature-desc">Ultra-fast inference with LangChain-Groq integration</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── ABOUT ─────────────────────────────────────────────────── -->
+<section class="about-section" id="section-about" style="display:none">
+  <div class="container">
+    <h2 class="section-title gradient-text">About TradingAgents</h2>
+    <p class="section-subtitle">A production-ready multi-agent financial analysis system</p>
+    <div class="about-grid">
+      <div class="about-block">
+        <h3>Technology Stack</h3>
+        <ul class="tech-list">
+          <li><span class="tech-badge">LangGraph</span> Workflow orchestration</li>
+          <li><span class="tech-badge">LangChain-Groq</span> Ultra-fast LLM inference</li>
+          <li><span class="tech-badge">yFinance</span> Stock data</li>
+          <li><span class="tech-badge">BeautifulSoup4</span> News scraping</li>
+          <li><span class="tech-badge">Flask</span> API &amp; UI backend</li>
+          <li><span class="tech-badge">Pandas/NumPy</span> Data processing</li>
+        </ul>
+      </div>
+      <div class="about-block">
+        <h3>Configuration</h3>
+        <div class="config-table">
+          <div class="config-row"><span>Max Debate Rounds</span><span class="config-val">2</span></div>
+          <div class="config-row"><span>Max Trade Iterations</span><span class="config-val">3</span></div>
+          <div class="config-row"><span>Score Threshold</span><span class="config-val">0.60</span></div>
+          <div class="config-row"><span>Human Approval</span><span class="config-val">Optional</span></div>
+          <div class="config-row"><span>Risk Tolerance</span><span class="config-val">Conservative / Moderate / Aggressive</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FOOTER ─────────────────────────────────────────────────── -->
+<footer class="footer">
+  <div class="container">
+    <span class="footer-logo">TradingAgents</span>
+    <span class="footer-sep">·</span>
+    <span class="footer-note">Not financial advice. For research use only.</span>
+  </div>
+</footer>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>

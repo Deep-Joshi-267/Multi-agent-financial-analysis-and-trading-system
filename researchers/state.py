@@ -63,6 +63,10 @@ class ResearcherState(TypedDict):
     # Debate rounds
     debate_rounds: List[dict]
     
+    # Debate flow control — set by evaluate_round(), read by _should_continue_debate()
+    should_continue: Optional[bool]
+    round_evaluation: Optional[dict]
+    
     # Final output
     research_report: Optional[dict]
     consensus_reached: bool

@@ -90,7 +90,7 @@ class DebateCoordinator:
     """Coordinates multi-round debates and synthesizes final research report."""
 
     def __init__(self, llm: Optional[ChatGroq] = None, max_rounds: int = 3):
-        self.llm = llm or ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2)
+        self.llm = llm or ChatGroq(model="qwen/qwen3.8-27b", temperature=0.2)
         self.synthesis_prompt = ChatPromptTemplate.from_template(SYNTHESIS_PROMPT)
         self.evaluation_prompt = ChatPromptTemplate.from_template(ROUND_EVALUATION_PROMPT)
         self.parser = JsonOutputParser()

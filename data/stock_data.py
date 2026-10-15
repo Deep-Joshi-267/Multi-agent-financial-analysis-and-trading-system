@@ -42,21 +42,99 @@ class StockDataFetcher:
             return pd.DataFrame()
 
     def get_company_info(self, symbol: str) -> dict:
-        """Get company fundamentals."""
+        """Get comprehensive company fundamentals for financial cards."""
         try:
             ticker = yf.Ticker(symbol)
-            info = ticker.info
+            info = ticker.info or {}
+
+            # Helper for clean ratio formatting
+            def _pct(val):
+                return f"{val * 100:.2f}%" if val is not None and not np.isnan(val) else "—"
+
+            def _fmt_val(val, prefix="", suffix=""):
+                if val is None or (isinstance(val, float) and np.isnan(val)):
+                    return "—"
+                if isinstance(val, (int, float)):
+                    if abs(val) >= 1e12:
+                        return f"{prefix}{val / 1e12:.2f}T{suffix}"
+                    elif abs(val) >= 1e9:
+                        return f"{prefix}{val / 1e9:.2f}B{suffix}"
+                    elif abs(val) >= 1e7:
+                        return f"{prefix}{val / 1e7:.2f}Cr{suffix}"
+                    elif abs(val) >= 1e5:
+                        return f"{prefix}{val / 1e5:.2f}L{suffix}"
+                    return f"{prefix}{val:.2f}{suffix}"
+                return str(val)
+
+            # Extract Financial Statements for ratios not directly in ticker.info
+            roe = info.get("returnOnEquity")
+            roce = None
+            interest_coverage = None
+            op_cashflow = info.get("operatingCashflow")
+            free_cashflow = info.get("freeCashflow")
+
+            try:
+                fin = ticker.financials
+                bs = ticker.balance_sheet
+                cf = ticker.cashflow
+
+                if cf is not None and not cf.empty:
+                    if op_cashflow is None and "Operating Cash Flow" in cf.index:
+                        op_cashflow = cf.loc["Operating Cash Flow"].iloc[0]
+                    if free_cashflow is None and "Free Cash Flow" in cf.index:
+                        free_cashflow = cf.loc["Free Cash Flow"].iloc[0]
+
+                if fin is not None and not fin.empty and bs is not None and not bs.empty:
+                    ebit = fin.loc["EBIT"].iloc[0] if "EBIT" in fin.index else (fin.loc["Operating Income"].iloc[0] if "Operating Income" in fin.index else None)
+                    interest_exp = abs(fin.loc["Interest Expense"].iloc[0]) if "Interest Expense" in fin.index else None
+                    if ebit and interest_exp and interest_exp > 0:
+                        interest_coverage = round(ebit / interest_exp, 2)
+
+                    total_assets = bs.loc["Total Assets"].iloc[0] if "Total Assets" in bs.index else None
+                    curr_liab = bs.loc["Current Liabilities"].iloc[0] if "Current Liabilities" in bs.index else None
+                    if ebit and total_assets and curr_liab:
+                        cap_employed = total_assets - curr_liab
+                        if cap_employed > 0:
+                            roce = (ebit / cap_employed)
+
+                    if roe is None and "Net Income" in fin.index and "Stockholders Equity" in bs.index:
+                        net_inc = fin.loc["Net Income"].iloc[0]
+                        equity = bs.loc["Stockholders Equity"].iloc[0]
+                        if equity and equity > 0:
+                            roe = net_inc / equity
+            except Exception:
+                pass
+
+            rev_growth = info.get("revenueGrowth")
+            earn_growth = info.get("earningsGrowth") or info.get("earningsQuarterlyGrowth")
+            op_margin = info.get("operatingMargins")
+            prof_margin = info.get("profitMargins")
+            d_e = info.get("debtToEquity")
+            pe = info.get("trailingPE") or info.get("forwardPE")
+            pb = info.get("priceToBook")
+            ev_ebitda = info.get("enterpriseToEbitda")
+            mcap = info.get("marketCap")
+
             return {
                 "name": info.get("shortName", symbol),
                 "symbol": symbol,
                 "sector": info.get("sector", "N/A"),
                 "industry": info.get("industry", "N/A"),
-                "market_cap": info.get("marketCap", 0),
-                "pe_ratio": info.get("trailingPE"),
-                "forward_pe": info.get("forwardPE"),
-                "dividend_yield": info.get("dividendYield"),
-                "eps": info.get("trailingEps"),
-                "beta": info.get("beta"),
+                "market_cap": _fmt_val(mcap, prefix="Rs. ") if ".NS" in symbol or ".BO" in symbol else _fmt_val(mcap, prefix="$"),
+                "revenue_growth": _pct(rev_growth),
+                "earnings_growth": _pct(earn_growth),
+                "eps_growth": _pct(earn_growth),  # Proxy YoY growth
+                "roe": _pct(roe),
+                "roce": _pct(roce),
+                "operating_margin": _pct(op_margin),
+                "profit_margin": _pct(prof_margin),
+                "debt_to_equity": f"{d_e:.2f}" if d_e is not None else "—",
+                "interest_coverage": f"{interest_coverage:.2f}x" if interest_coverage is not None else "—",
+                "pe_ratio": f"{pe:.2f}" if pe is not None else "—",
+                "price_to_book": f"{pb:.2f}" if pb is not None else "—",
+                "ev_ebitda": f"{ev_ebitda:.2f}" if ev_ebitda is not None else "—",
+                "operating_cashflow": _fmt_val(op_cashflow, prefix="Rs. ") if ".NS" in symbol or ".BO" in symbol else _fmt_val(op_cashflow, prefix="$"),
+                "free_cashflow": _fmt_val(free_cashflow, prefix="Rs. ") if ".NS" in symbol or ".BO" in symbol else _fmt_val(free_cashflow, prefix="$"),
                 "52_week_high": info.get("fiftyTwoWeekHigh"),
                 "52_week_low": info.get("fiftyTwoWeekLow"),
                 "avg_volume": info.get("averageVolume"),
@@ -184,29 +262,24 @@ class StockDataFetcher:
         return hist["Volume"].dropna().astype(int).tolist()
 
     def get_financial_reports(self, symbol: str) -> dict:
-        """Get financial report data for LangGraph fundamentals analyst."""
+        """Get financial report data formatted for the 100-point fundamental analysis engine."""
         info = self.get_company_info(symbol)
-        indicators = self.get_technical_indicators(symbol)
 
         return {
-            "income_statement": {
-                "market_cap": f"${info.get('market_cap', 0) / 1e9:.2f}B" if info.get('market_cap') else "N/A",
-                "pe_ratio": info.get("pe_ratio"),
-                "forward_pe": info.get("forward_pe"),
-                "eps": info.get("eps"),
-            },
-            "valuation": {
-                "52_week_high": info.get("52_week_high"),
-                "52_week_low": info.get("52_week_low"),
-                "current_price": indicators.get("current_price"),
-                "beta": info.get("beta"),
-            },
-            "dividends": {
-                "dividend_yield": f"{info.get('dividend_yield', 0) * 100:.2f}%" if info.get('dividend_yield') else "N/A",
-            },
-            "company": {
-                "sector": info.get("sector"),
-                "industry": info.get("industry"),
-                "description": info.get("description", "")[:500],
-            },
+            "Sector": info.get("sector", "N/A"),
+            "Market Cap": info.get("market_cap", "N/A"),
+            "Revenue Growth": info.get("revenue_growth", "—"),
+            "Earnings Growth": info.get("earnings_growth", "—"),
+            "EPS Growth": info.get("eps_growth", "—"),
+            "ROE": info.get("roe", "—"),
+            "ROCE": info.get("roce", "—"),
+            "Operating Margin": info.get("operating_margin", "—"),
+            "Profit Margin": info.get("profit_margin", "—"),
+            "Debt/Equity": info.get("debt_to_equity", "—"),
+            "Interest Coverage": info.get("interest_coverage", "—"),
+            "P/E": info.get("pe_ratio", "—"),
+            "P/B": info.get("price_to_book", "—"),
+            "EV/EBITDA": info.get("ev_ebitda", "—"),
+            "Operating Cash Flow": info.get("operating_cashflow", "—"),
+            "Free Cash Flow": info.get("free_cashflow", "—"),
         }
